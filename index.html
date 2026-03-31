@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#021f3d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <title>Shift Coverage</title>
+  <style>
+    /* ─── Reset & Base ─────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f4f0;
+      color: #1a1a1a;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 70px;
+    }
+
+    /* ─── Header ───────────────────────────────────── */
+    .header {
+      background: linear-gradient(180deg, #052d54 0%, #021f3d 100%);
+      color: #fff;
+      padding: 20px 16px 16px;
+      text-align: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+    .header .user-badge {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 12px;
+      background: rgba(255,255,255,0.15);
+      padding: 3px 12px;
+      border-radius: 20px;
+    }
+
+    /* ─── Container ────────────────────────────────── */
+    .container {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+
+    /* ─── Screens ──────────────────────────────────── */
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ─── Cards ────────────────────────────────────── */
+    .card {
+      background: #fff;
+      border-radius: 14px;
+      padding: 20px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+    }
+
+    /* ─── Buttons ──────────────────────────────────── */
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+      transition: opacity 0.2s;
+    }
+    .btn:active { opacity: 0.8; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #052d54, #021f3d);
+      color: #fff;
+    }
+    .btn-danger {
+      background: #dc3545;
+      color: #fff;
+    }
+    .btn-outline {
+      background: transparent;
+      color: #052d54;
+      border: 2px solid #052d54;
+    }
+    .btn-small {
+      display: inline-block;
+      width: auto;
+      padding: 8px 16px;
+      font-size: 13px;
+      border-radius: 8px;
+    }
+    .btn-claim {
+      background: #28a745;
+      color: #fff;
+    }
+    .btn-cancel-shift {
+      background: #6c757d;
+      color: #fff;
+    }
+
+    /* ─── Form Inputs ─────────────────────────────── */
+    .form-group { margin-bottom: 16px; }
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #555;
+      margin-bottom: 6px;
+    }
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 16px;
+      font-family: inherit;
+      background: #fafafa;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus,
+    .form-group select:focus,
+    .form-group textarea:focus {
+      outline: none;
+      border-color: #052d54;
+      background: #fff;
+    }
+    .form-group textarea { resize: vertical; min-height: 80px; }
+
+    /* ─── Shift Card ──────────────────────────────── */
+    .shift-card { position: relative; }
+    .shift-card .shift-date {
+      font-size: 15px;
+      font-weight: 700;
+      color: #052d54;
+    }
+    .shift-card .shift-time {
+      font-size: 14px;
+      color: #555;
+      margin-top: 2px;
+    }
+    .shift-card .shift-meta {
+      font-size: 13px;
+      color: #777;
+      margin-top: 6px;
+    }
+    .shift-card .shift-posted-by {
+      font-size: 13px;
+      color: #999;
+      margin-top: 8px;
+    }
+    .shift-card .shift-actions {
+      margin-top: 12px;
+      display: flex;
+      gap: 8px;
+    }
+    .badge-urgent {
+      display: inline-block;
+      background: #dc3545;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 20px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .badge-your-post {
+      display: inline-block;
+      background: #e9ecef;
+      color: #495057;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 10px;
+      border-radius: 20px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    /* ─── Score List ───────────────────────────────── */
+    .score-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .score-row:last-child { border-bottom: none; }
+    .score-name { font-size: 15px; font-weight: 500; }
+    .score-badge {
+      font-size: 14px;
+      font-weight: 700;
+      padding: 4px 14px;
+      border-radius: 20px;
+      min-width: 50px;
+      text-align: center;
+    }
+    .score-positive { background: #d4edda; color: #155724; }
+    .score-negative { background: #f8d7da; color: #721c24; }
+    .score-zero { background: #e9ecef; color: #6c757d; }
+
+    /* ─── History List ─────────────────────────────── */
+    .history-item {
+      padding: 12px 0;
+      border-bottom: 1px solid #f0f0f0;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .history-item:last-child { border-bottom: none; }
+    .history-date { font-size: 12px; color: #999; margin-top: 2px; }
+    .history-names { font-weight: 600; }
+
+    /* ─── Bottom Nav ───────────────────────────────── */
+    .bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: #fff;
+      border-top: 1px solid #e0e0e0;
+      display: flex;
+      z-index: 100;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .nav-tab {
+      flex: 1;
+      padding: 10px 0 8px;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      color: #999;
+      background: none;
+      border: none;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .nav-tab.active { color: #052d54; }
+    .nav-tab svg {
+      display: block;
+      margin: 0 auto 3px;
+      width: 22px;
+      height: 22px;
+    }
+    .nav-tab.active svg { fill: #052d54; }
+
+    /* ─── Schedule ─────────────────────────────────── */
+    .schedule-day {
+      margin-bottom: 6px;
+    }
+    .schedule-day-header {
+      font-size: 15px;
+      font-weight: 700;
+      color: #052d54;
+      padding: 10px 0 6px;
+      border-bottom: 2px solid #052d54;
+      margin-bottom: 8px;
+    }
+    .schedule-shift {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .schedule-shift:last-child { border-bottom: none; }
+    .schedule-shift-info {
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .schedule-shift-time {
+      font-weight: 600;
+      color: #1a1a1a;
+    }
+    .schedule-shift-location {
+      font-size: 12px;
+      color: #777;
+    }
+    .schedule-shift-staff {
+      font-size: 14px;
+      font-weight: 600;
+      color: #052d54;
+      text-align: right;
+    }
+    .schedule-closed {
+      text-align: center;
+      padding: 20px;
+      color: #999;
+      font-size: 15px;
+      font-style: italic;
+    }
+    .schedule-today {
+      background: #eef4ee;
+      border-radius: 10px;
+      padding: 0 12px;
+    }
+
+    /* ─── Empty State ──────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #999;
+    }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state p { font-size: 15px; }
+
+    /* ─── Loading ──────────────────────────────────── */
+    .loading {
+      text-align: center;
+      padding: 30px;
+      color: #999;
+    }
+    .spinner {
+      display: inline-block;
+      width: 24px;
+      height: 24px;
+      border: 3px solid #e0e0e0;
+      border-top-color: #052d54;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── Section Title ────────────────────────────── */
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    /* ─── Admin ────────────────────────────────────── */
+    .admin-section {
+      margin-bottom: 24px;
+    }
+    .admin-section h3 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: #052d54;
+    }
+    .admin-staff-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .admin-staff-name { font-size: 14px; }
+    .admin-inline-form {
+      display: flex;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .admin-inline-form input {
+      flex: 1;
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      font-size: 14px;
+      font-family: inherit;
+    }
+
+    /* ─── Toast ────────────────────────────────────── */
+    .toast {
+      position: fixed;
+      top: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #333;
+      color: #fff;
+      padding: 10px 24px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 500;
+      z-index: 200;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+    }
+    .toast.show { opacity: 1; }
+
+    /* ─── Refresh Button ───────────────────────────── */
+    .refresh-btn {
+      position: absolute;
+      right: 16px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.7);
+      cursor: pointer;
+      padding: 6px;
+    }
+    .refresh-btn svg { width: 20px; height: 20px; fill: currentColor; }
+    .refresh-btn:active { color: #fff; }
+
+    /* ─── Confirmation Modal ───────────────────────── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.5);
+      z-index: 300;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.show { display: flex; }
+    .modal-box {
+      background: #fff;
+      border-radius: 16px;
+      padding: 28px 24px;
+      max-width: 320px;
+      width: 90%;
+      text-align: center;
+    }
+    .modal-box p {
+      font-size: 15px;
+      line-height: 1.5;
+      margin-bottom: 20px;
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+    }
+    .modal-actions .btn { flex: 1; padding: 12px; }
+
+    /* ─── Setup specific ───────────────────────────── */
+    .setup-logo {
+      font-size: 48px;
+      text-align: center;
+      margin: 30px 0 10px;
+    }
+    .setup-title {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      color: #052d54;
+      margin-bottom: 6px;
+    }
+    .setup-subtitle {
+      text-align: center;
+      font-size: 14px;
+      color: #777;
+      margin-bottom: 30px;
+    }
+
+    /* ─── PIN Modal ────────────────────────────────── */
+    .pin-input {
+      font-size: 24px;
+      text-align: center;
+      letter-spacing: 8px;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─── Header ────────────────────────────────── -->
+  <div class="header" id="appHeader" style="display:none; position:relative;">
+    <h1>Shift Coverage</h1>
+    <div class="user-badge" id="headerUser"></div>
+    <button class="refresh-btn" onclick="refreshCurrentScreen()" title="Refresh">
+      <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+    </button>
+  </div>
+
+  <div class="container">
+
+    <!-- ═══ SETUP SCREEN ═══ -->
+    <div id="setupScreen" class="screen active">
+      <div class="setup-logo">&#128260;</div>
+      <div class="setup-title">Shift Coverage</div>
+      <div class="setup-subtitle">Track who covers whom — keep it fair.</div>
+
+      <div class="card">
+        <div class="form-group">
+          <label>Apps Script URL</label>
+          <input type="url" id="setupUrl" placeholder="Paste your deployed Web App URL">
+        </div>
+
+        <div class="form-group" id="setupNameGroup" style="display:none;">
+          <label>Who are you?</label>
+          <select id="setupName">
+            <option value="">Loading staff...</option>
+          </select>
+        </div>
+
+        <button class="btn btn-primary" id="setupBtn" onclick="handleSetup()">Connect</button>
+        <p id="setupError" style="color:#dc3545;font-size:13px;margin-top:10px;text-align:center;display:none;"></p>
+      </div>
+    </div>
+
+    <!-- ═══ HOME SCREEN ═══ -->
+    <div id="homeScreen" class="screen">
+      <div class="section-title">Weekly Schedule</div>
+      <div id="scheduleList"></div>
+    </div>
+
+    <!-- ═══ BOARD SCREEN ═══ -->
+    <div id="boardScreen" class="screen">
+      <button class="btn btn-primary" onclick="showScreen('postScreen')" style="margin-bottom:16px;">
+        + Post a Shift to Cover
+      </button>
+      <div class="section-title">Open Shifts</div>
+      <div id="shiftsList">
+        <div class="loading"><div class="spinner"></div></div>
+      </div>
+    </div>
+
+    <!-- ═══ POST SHIFT SCREEN ═══ -->
+    <div id="postScreen" class="screen">
+      <div class="card">
+        <div class="section-title" style="margin-bottom:16px;">Post a Shift</div>
+
+        <div class="form-group">
+          <label>Shift Date</label>
+          <input type="date" id="postDate">
+        </div>
+        <div class="form-group">
+          <label>Start Time</label>
+          <input type="time" id="postStart">
+        </div>
+        <div class="form-group">
+          <label>End Time</label>
+          <input type="time" id="postEnd">
+        </div>
+        <div class="form-group">
+          <label>Location</label>
+          <input type="text" id="postLocation" placeholder="e.g. Main Office">
+        </div>
+        <div class="form-group">
+          <label>Notes (optional)</label>
+          <textarea id="postNotes" placeholder="Any details about the shift..."></textarea>
+        </div>
+
+        <button class="btn btn-primary" onclick="submitShift()">Post Shift</button>
+        <button class="btn btn-outline" onclick="showScreen('boardScreen')" style="margin-top:10px;">Cancel</button>
+      </div>
+    </div>
+
+    <!-- ═══ SCORES SCREEN ═══ -->
+    <div id="scoresScreen" class="screen">
+      <div class="card">
+        <div class="section-title">Coverage Balance</div>
+        <div id="scoresList">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+      <p style="text-align:center;font-size:12px;color:#999;margin-top:12px;">
+        +1 for covering a shift &nbsp;|&nbsp; -1 for being covered
+      </p>
+    </div>
+
+    <!-- ═══ HISTORY SCREEN ═══ -->
+    <div id="historyScreen" class="screen">
+      <div class="card">
+        <div class="section-title">Coverage History</div>
+        <div id="historyList">
+          <div class="loading"><div class="spinner"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ ADMIN SCREEN ═══ -->
+    <div id="adminScreen" class="screen">
+      <!-- PIN gate -->
+      <div id="adminPinGate" class="card" style="text-align:center;">
+        <div class="section-title">Admin Access</div>
+        <p style="font-size:14px;color:#777;margin-bottom:16px;">Enter admin PIN to continue</p>
+        <div class="form-group">
+          <input type="password" id="adminPinInput" class="pin-input" maxlength="10" placeholder="----" inputmode="numeric">
+        </div>
+        <button class="btn btn-primary" onclick="verifyAdminPin()">Unlock</button>
+        <p id="adminPinError" style="color:#dc3545;font-size:13px;margin-top:10px;display:none;">Incorrect PIN</p>
+      </div>
+
+      <!-- Admin panel (hidden until PIN verified) -->
+      <div id="adminPanel" style="display:none;">
+        <!-- Manage Staff -->
+        <div class="card admin-section">
+          <h3>Manage Staff</h3>
+          <div id="adminStaffList"></div>
+          <div class="admin-inline-form">
+            <input type="text" id="adminNewStaff" placeholder="New staff name">
+            <button class="btn btn-primary btn-small" onclick="adminAddStaff()">Add</button>
+          </div>
+        </div>
+
+        <!-- Reset Scores -->
+        <div class="card admin-section">
+          <h3>Reset All Scores</h3>
+          <p style="font-size:13px;color:#777;margin-bottom:12px;">This will set everyone's balance back to 0.</p>
+          <button class="btn btn-danger" onclick="confirmResetScores()">Reset All Scores to Zero</button>
+        </div>
+
+        <!-- Manage Shifts -->
+        <div class="card admin-section">
+          <h3>Manage Shifts</h3>
+          <div id="adminShiftsList">
+            <div class="loading"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ─── Bottom Nav ──────────────────────────────── -->
+  <div class="bottom-nav" id="bottomNav" style="display:none;">
+    <button class="nav-tab active" onclick="navigate('homeScreen', this)" data-screen="homeScreen">
+      <svg viewBox="0 0 24 24" fill="#999"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      Home
+    </button>
+    <button class="nav-tab" onclick="navigate('boardScreen', this)" data-screen="boardScreen">
+      <svg viewBox="0 0 24 24" fill="#999"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2z"/></svg>
+      Board
+    </button>
+    <button class="nav-tab" onclick="navigate('scoresScreen', this)" data-screen="scoresScreen">
+      <svg viewBox="0 0 24 24" fill="#999"><path d="M16 6l2.29 2.29-4.88 4.88-4-4L2 16.59 3.41 18l6-6 4 4 6.3-6.29L22 12V6z"/></svg>
+      Scores
+    </button>
+    <button class="nav-tab" onclick="navigate('historyScreen', this)" data-screen="historyScreen">
+      <svg viewBox="0 0 24 24" fill="#999"><path d="M13 3a9 9 0 00-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42A8.954 8.954 0 0013 21a9 9 0 000-18zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+      History
+    </button>
+    <button class="nav-tab" onclick="navigate('adminScreen', this)" data-screen="adminScreen">
+      <svg viewBox="0 0 24 24" fill="#999"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.488.488 0 00-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.07.62-.07.94s.02.64.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1115.6 12 3.6 3.6 0 0112 15.6z"/></svg>
+      Admin
+    </button>
+  </div>
+
+  <!-- ─── Toast ───────────────────────────────────── -->
+  <div class="toast" id="toast"></div>
+
+  <!-- ─── Confirmation Modal ──────────────────────── -->
+  <div class="modal-overlay" id="confirmModal">
+    <div class="modal-box">
+      <p id="confirmMessage"></p>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-small" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-danger btn-small" id="confirmBtn" onclick="">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ─── State ────────────────────────────────────────────
+let API_URL = localStorage.getItem('shiftCoverageUrl') || '';
+let currentUser = localStorage.getItem('shiftCoverageUser') || '';
+let adminVerified = false;
+let adminPIN = '';
+let cachedStaff = [];
+
+// ─── Init ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  if (API_URL && currentUser) {
+    enterApp();
+  } else if (API_URL) {
+    // Have URL but no user — fetch staff and show name picker
+    document.getElementById('setupUrl').value = API_URL;
+    fetchStaffForSetup();
+  }
+
+  // Register service worker
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+});
+
+// ─── Setup ────────────────────────────────────────────
+async function handleSetup() {
+  const urlInput = document.getElementById('setupUrl');
+  const nameSelect = document.getElementById('setupName');
+  const errorEl = document.getElementById('setupError');
+  const btn = document.getElementById('setupBtn');
+
+  errorEl.style.display = 'none';
+
+  // Step 1: validate URL
+  const url = urlInput.value.trim();
+  if (!url) {
+    showSetupError('Please paste the Apps Script URL.');
+    return;
+  }
+
+  // If we haven't fetched staff yet, do that first
+  if (!cachedStaff.length) {
+    btn.textContent = 'Connecting...';
+    btn.disabled = true;
+    API_URL = url;
+
+    try {
+      const resp = await fetchAPI('getStaff');
+      if (resp.status !== 'ok' || !resp.staff || !resp.staff.length) {
+        throw new Error('No staff found. Add names to the Staff tab in your Google Sheet.');
+      }
+      cachedStaff = resp.staff;
+      localStorage.setItem('shiftCoverageUrl', url);
+
+      // Show name picker
+      const select = document.getElementById('setupName');
+      select.innerHTML = '<option value="">Select your name...</option>';
+      cachedStaff.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+
+      document.getElementById('setupNameGroup').style.display = 'block';
+      btn.textContent = 'Get Started';
+      btn.disabled = false;
+      return;
+
+    } catch (err) {
+      showSetupError(err.message || 'Could not connect. Check the URL.');
+      btn.textContent = 'Connect';
+      btn.disabled = false;
+      API_URL = '';
+      return;
+    }
+  }
+
+  // Step 2: pick name
+  const name = nameSelect.value;
+  if (!name) {
+    showSetupError('Please select your name.');
+    return;
+  }
+
+  currentUser = name;
+  localStorage.setItem('shiftCoverageUser', name);
+  enterApp();
+}
+
+function showSetupError(msg) {
+  const el = document.getElementById('setupError');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+async function fetchStaffForSetup() {
+  try {
+    const resp = await fetchAPI('getStaff');
+    if (resp.status === 'ok' && resp.staff && resp.staff.length) {
+      cachedStaff = resp.staff;
+      const select = document.getElementById('setupName');
+      select.innerHTML = '<option value="">Select your name...</option>';
+      cachedStaff.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+      document.getElementById('setupNameGroup').style.display = 'block';
+      document.getElementById('setupBtn').textContent = 'Get Started';
+    }
+  } catch (e) {
+    // Silently fail — user can re-enter URL
+  }
+}
+
+function enterApp() {
+  document.getElementById('appHeader').style.display = 'block';
+  document.getElementById('bottomNav').style.display = 'flex';
+  document.getElementById('headerUser').textContent = currentUser;
+  showScreen('homeScreen');
+  renderSchedule();
+}
+
+// ─── Schedule Data ────────────────────────────────────
+const DAY_INDEXES = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
+
+async function renderSchedule() {
+  const container = document.getElementById('scheduleList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  try {
+    const resp = await fetchAPI('getSchedule');
+    if (resp.status !== 'ok') throw new Error(resp.message);
+
+    const schedule = resp.schedule || [];
+    const today = new Date().getDay(); // 0=Sun, 1=Mon, ...
+    container.innerHTML = '';
+
+    schedule.forEach(day => {
+      const dayIndex = DAY_INDEXES[day.day];
+      const isToday = dayIndex === today;
+      const card = document.createElement('div');
+      card.className = 'card schedule-day' + (isToday ? ' schedule-today' : '');
+
+      let inner = `<div class="schedule-day-header">${escapeHtml(day.day)}${isToday ? ' — Today' : ''}</div>`;
+
+      if (day.shifts.length === 0) {
+        inner += '<div class="schedule-closed">No shifts</div>';
+      } else {
+        day.shifts.forEach(shift => {
+          inner += `
+            <div class="schedule-shift">
+              <div class="schedule-shift-info">
+                <div class="schedule-shift-time">${escapeHtml(shift.time)}</div>
+                <div class="schedule-shift-location">${escapeHtml(shift.location)}</div>
+              </div>
+              <div class="schedule-shift-staff">${escapeHtml(shift.staff)}</div>
+            </div>`;
+        });
+      }
+
+      card.innerHTML = inner;
+      container.appendChild(card);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><p>Could not load schedule. Pull to refresh.</p></div>';
+  }
+}
+
+// ─── Navigation ───────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function navigate(screenId, tabEl) {
+  showScreen(screenId);
+  document.querySelectorAll('.nav-tab').forEach(t => {
+    t.classList.remove('active');
+    t.querySelector('svg').setAttribute('fill', '#999');
+  });
+  tabEl.classList.add('active');
+  tabEl.querySelector('svg').setAttribute('fill', '#052d54');
+
+  // Load data for the screen
+  if (screenId === 'homeScreen') renderSchedule();
+  else if (screenId === 'boardScreen') loadBoard();
+  else if (screenId === 'scoresScreen') loadScores();
+  else if (screenId === 'historyScreen') loadHistory();
+  else if (screenId === 'adminScreen') {
+    if (!adminVerified) {
+      document.getElementById('adminPinGate').style.display = 'block';
+      document.getElementById('adminPanel').style.display = 'none';
+    }
+  }
+}
+
+function refreshCurrentScreen() {
+  const active = document.querySelector('.screen.active');
+  if (!active) return;
+  const id = active.id;
+  if (id === 'homeScreen') renderSchedule();
+  else if (id === 'boardScreen') loadBoard();
+  else if (id === 'scoresScreen') loadScores();
+  else if (id === 'historyScreen') loadHistory();
+  else if (id === 'adminScreen' && adminVerified) loadAdminData();
+  showToast('Refreshed');
+}
+
+// ─── API Helper ───────────────────────────────────────
+async function fetchAPI(action) {
+  const url = API_URL + '?action=' + encodeURIComponent(action);
+  const resp = await fetch(url);
+  return await resp.json();
+}
+
+async function postAPI(data) {
+  await fetch(API_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  // no-cors means we can't read the response — assume success
+}
+
+// ─── Board ────────────────────────────────────────────
+async function loadBoard() {
+  const container = document.getElementById('shiftsList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  try {
+    const resp = await fetchAPI('getShifts');
+    if (resp.status !== 'ok') throw new Error(resp.message);
+
+    const shifts = resp.shifts || [];
+    if (shifts.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">&#9989;</div>
+          <p>No shifts need coverage right now.</p>
+        </div>`;
+      return;
+    }
+
+    container.innerHTML = '';
+    const now = new Date();
+
+    shifts.forEach(shift => {
+      const shiftDate = new Date(shift.ShiftDate + 'T00:00:00');
+      const hoursUntil = (shiftDate - now) / (1000 * 60 * 60);
+      const isUrgent = hoursUntil <= 48 && hoursUntil >= 0;
+      const isOwn = shift.PostedBy === currentUser;
+
+      const dateStr = formatDate(shift.ShiftDate);
+      const timeStr = formatTime(shift.StartTime) + ' – ' + formatTime(shift.EndTime);
+
+      const card = document.createElement('div');
+      card.className = 'card shift-card';
+      card.innerHTML = `
+        <div class="shift-date">
+          ${dateStr}
+          ${isUrgent ? '<span class="badge-urgent">Urgent</span>' : ''}
+          ${isOwn ? '<span class="badge-your-post">Your Post</span>' : ''}
+        </div>
+        <div class="shift-time">${timeStr}</div>
+        ${shift.Location ? '<div class="shift-meta">' + escapeHtml(shift.Location) + '</div>' : ''}
+        ${shift.Notes ? '<div class="shift-meta" style="font-style:italic;">' + escapeHtml(shift.Notes) + '</div>' : ''}
+        <div class="shift-posted-by">Posted by ${escapeHtml(shift.PostedBy)}</div>
+        <div class="shift-actions">
+          ${isOwn
+            ? '<button class="btn btn-cancel-shift btn-small" onclick="cancelShift(\'' + shift.ID + '\')">Cancel Post</button>'
+            : '<button class="btn btn-claim btn-small" onclick="claimShift(\'' + shift.ID + '\', \'' + escapeHtml(shift.PostedBy) + '\')">Cover This Shift</button>'
+          }
+        </div>
+      `;
+      container.appendChild(card);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><p>Could not load shifts. Pull to refresh.</p></div>';
+  }
+}
+
+async function claimShift(id, postedBy) {
+  showConfirm(
+    'Cover ' + postedBy + '\'s shift? This will give you +1 and them -1.',
+    async () => {
+      showToast('Claiming shift...');
+      await postAPI({ action: 'claimShift', id: id, claimedBy: currentUser });
+      // Wait a moment then refresh
+      setTimeout(() => loadBoard(), 1200);
+    }
+  );
+}
+
+async function cancelShift(id) {
+  showConfirm(
+    'Cancel this shift request? It will be removed from the board.',
+    async () => {
+      showToast('Cancelling...');
+      await postAPI({ action: 'cancelShift', id: id });
+      setTimeout(() => loadBoard(), 1200);
+    }
+  );
+}
+
+// ─── Post Shift ───────────────────────────────────────
+async function submitShift() {
+  const date = document.getElementById('postDate').value;
+  const start = document.getElementById('postStart').value;
+  const end = document.getElementById('postEnd').value;
+  const location = document.getElementById('postLocation').value.trim();
+  const notes = document.getElementById('postNotes').value.trim();
+
+  if (!date || !start || !end) {
+    showToast('Please fill in date and times.');
+    return;
+  }
+
+  showToast('Posting shift...');
+  await postAPI({
+    action: 'postShift',
+    postedBy: currentUser,
+    shiftDate: date,
+    startTime: start,
+    endTime: end,
+    location: location,
+    notes: notes
+  });
+
+  // Clear form
+  document.getElementById('postDate').value = '';
+  document.getElementById('postStart').value = '';
+  document.getElementById('postEnd').value = '';
+  document.getElementById('postLocation').value = '';
+  document.getElementById('postNotes').value = '';
+
+  // Navigate to board
+  setTimeout(() => {
+    showScreen('boardScreen');
+    // Reset nav tabs
+    document.querySelectorAll('.nav-tab').forEach(t => {
+      t.classList.remove('active');
+      t.querySelector('svg').setAttribute('fill', '#999');
+    });
+    document.querySelector('[data-screen="boardScreen"]').classList.add('active');
+    document.querySelector('[data-screen="boardScreen"] svg').setAttribute('fill', '#052d54');
+    loadBoard();
+  }, 1200);
+}
+
+// ─── Scores ───────────────────────────────────────────
+async function loadScores() {
+  const container = document.getElementById('scoresList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  try {
+    const resp = await fetchAPI('getScores');
+    if (resp.status !== 'ok') throw new Error(resp.message);
+
+    const scores = resp.scores || [];
+    if (scores.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No staff found.</p></div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    scores.forEach(s => {
+      let badgeClass = 'score-zero';
+      let prefix = '';
+      if (s.score > 0) { badgeClass = 'score-positive'; prefix = '+'; }
+      else if (s.score < 0) { badgeClass = 'score-negative'; }
+
+      const row = document.createElement('div');
+      row.className = 'score-row';
+      row.innerHTML = `
+        <span class="score-name">${escapeHtml(s.name)}${s.name === currentUser ? ' (you)' : ''}</span>
+        <span class="score-badge ${badgeClass}">${prefix}${s.score}</span>
+      `;
+      container.appendChild(row);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><p>Could not load scores.</p></div>';
+  }
+}
+
+// ─── History ──────────────────────────────────────────
+async function loadHistory() {
+  const container = document.getElementById('historyList');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+
+  try {
+    const resp = await fetchAPI('getHistory');
+    if (resp.status !== 'ok') throw new Error(resp.message);
+
+    const history = resp.history || [];
+    if (history.length === 0) {
+      container.innerHTML = '<div class="empty-state"><p>No coverage history yet.</p></div>';
+      return;
+    }
+
+    container.innerHTML = '';
+    history.forEach(h => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      item.innerHTML = `
+        <div><span class="history-names">${escapeHtml(h.coveredBy)}</span> covered <span class="history-names">${escapeHtml(h.postedBy)}</span>'s shift on ${formatDate(h.shiftDate)}</div>
+        <div class="history-date">${formatDateTime(h.completedAt)}</div>
+      `;
+      container.appendChild(item);
+    });
+
+  } catch (err) {
+    container.innerHTML = '<div class="empty-state"><p>Could not load history.</p></div>';
+  }
+}
+
+// ─── Admin ────────────────────────────────────────────
+async function verifyAdminPin() {
+  const pin = document.getElementById('adminPinInput').value;
+  const errorEl = document.getElementById('adminPinError');
+
+  // Fetch scores to check if current user is admin
+  try {
+    const resp = await fetchAPI('getScores');
+    const userScore = (resp.scores || []).find(s => s.name === currentUser);
+    if (!userScore || !userScore.isAdmin) {
+      errorEl.textContent = 'You are not an admin.';
+      errorEl.style.display = 'block';
+      return;
+    }
+  } catch (e) {
+    errorEl.textContent = 'Could not verify. Check connection.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  adminPIN = pin;
+  adminVerified = true;
+  document.getElementById('adminPinGate').style.display = 'none';
+  document.getElementById('adminPanel').style.display = 'block';
+  loadAdminData();
+}
+
+async function loadAdminData() {
+  // Load staff list
+  try {
+    const resp = await fetchAPI('getScores');
+    const staffList = resp.scores || [];
+    const container = document.getElementById('adminStaffList');
+    container.innerHTML = '';
+    staffList.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'admin-staff-row';
+      row.innerHTML = `
+        <span class="admin-staff-name">${escapeHtml(s.name)} ${s.isAdmin ? '(admin)' : ''}</span>
+        ${!s.isAdmin ? '<button class="btn btn-danger btn-small" onclick="adminRemoveStaff(\'' + escapeHtml(s.name) + '\')">Remove</button>' : ''}
+      `;
+      container.appendChild(row);
+    });
+  } catch (e) {}
+
+  // Load all shifts
+  try {
+    const resp = await fetchAPI('getAllShifts');
+    const shifts = resp.shifts || [];
+    const container = document.getElementById('adminShiftsList');
+
+    const activeShifts = shifts.filter(s => s.Status === 'open' || s.Status === 'claimed');
+    if (activeShifts.length === 0) {
+      container.innerHTML = '<p style="font-size:13px;color:#999;">No active shifts.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    activeShifts.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'admin-staff-row';
+      row.innerHTML = `
+        <div>
+          <div style="font-size:13px;font-weight:600;">${formatDate(s.ShiftDate)} — ${escapeHtml(s.PostedBy)}</div>
+          <div style="font-size:12px;color:#777;">Status: ${s.Status}${s.ClaimedBy ? ' by ' + escapeHtml(s.ClaimedBy) : ''}</div>
+        </div>
+        <button class="btn btn-danger btn-small" onclick="adminDeleteShift('${s.ID}')">Delete</button>
+      `;
+      container.appendChild(row);
+    });
+  } catch (e) {}
+}
+
+async function adminAddStaff() {
+  const input = document.getElementById('adminNewStaff');
+  const name = input.value.trim();
+  if (!name) return;
+
+  showToast('Adding staff...');
+  await postAPI({ action: 'addStaff', name: name, pin: adminPIN });
+  input.value = '';
+  setTimeout(() => loadAdminData(), 1200);
+}
+
+function adminRemoveStaff(name) {
+  showConfirm('Remove ' + name + ' from the staff list?', async () => {
+    showToast('Removing...');
+    await postAPI({ action: 'removeStaff', name: name, pin: adminPIN });
+    setTimeout(() => loadAdminData(), 1200);
+  });
+}
+
+function confirmResetScores() {
+  showConfirm('Reset ALL scores to zero? This cannot be undone.', async () => {
+    showToast('Resetting scores...');
+    await postAPI({ action: 'resetScores', pin: adminPIN });
+    setTimeout(() => loadAdminData(), 1200);
+  });
+}
+
+function adminDeleteShift(id) {
+  showConfirm('Delete this shift? If it was claimed, scores will be reversed.', async () => {
+    showToast('Deleting...');
+    await postAPI({ action: 'deleteShift', id: id, pin: adminPIN });
+    setTimeout(() => loadAdminData(), 1200);
+  });
+}
+
+// ─── Helpers ──────────────────────────────────────────
+function formatDate(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate();
+}
+
+function formatTime(timeStr) {
+  if (!timeStr) return '';
+  const parts = timeStr.split(':');
+  let h = parseInt(parts[0]);
+  const m = parts[1];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return h + ':' + m + ' ' + ampm;
+}
+
+function formatDateTime(isoStr) {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  return formatDate(d.toISOString().split('T')[0]) + ' at ' + d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function showToast(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+
+function showConfirm(message, onConfirm) {
+  document.getElementById('confirmMessage').textContent = message;
+  document.getElementById('confirmBtn').onclick = () => {
+    closeModal();
+    onConfirm();
+  };
+  document.getElementById('confirmModal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('confirmModal').classList.remove('show');
+}
+</script>
+</body>
+</html>
