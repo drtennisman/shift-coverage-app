@@ -33,11 +33,24 @@ function sheetToObjects(sheet) {
   var data = sheet.getDataRange().getValues();
   if (data.length < 2) return [];
   var headers = data[0];
+  var tz = Session.getScriptTimeZone();
   var rows = [];
   for (var i = 1; i < data.length; i++) {
     var obj = {};
     for (var j = 0; j < headers.length; j++) {
-      obj[headers[j]] = data[i][j];
+      var val = data[i][j];
+      // Convert Date objects to clean strings so the client gets predictable formats
+      if (val instanceof Date) {
+        var header = String(headers[j]).trim();
+        if (header === 'ShiftDate') {
+          val = Utilities.formatDate(val, tz, 'yyyy-MM-dd');
+        } else if (header === 'StartTime' || header === 'EndTime' || header === 'Time') {
+          val = Utilities.formatDate(val, tz, 'HH:mm');
+        } else {
+          val = val.toISOString();
+        }
+      }
+      obj[headers[j]] = val;
     }
     rows.push(obj);
   }
@@ -68,17 +81,22 @@ function getAdminPIN() {
 function expirePastShifts() {
   var sheet = getSheet('Shifts');
   var data = sheet.getDataRange().getValues();
-  var today = new Date();
-  today.setHours(0, 0, 0, 0);
+  var now = new Date();
+  var todayStr = Utilities.formatDate(now, Session.getScriptTimeZone(), 'yyyy-MM-dd');
 
   for (var i = 1; i < data.length; i++) {
     var status = data[i][7]; // Status column (H)
     if (status !== 'open') continue;
 
-    var shiftDate = new Date(data[i][2]); // ShiftDate column (C)
-    shiftDate.setHours(0, 0, 0, 0);
+    var raw = data[i][2]; // ShiftDate column (C)
+    var shiftStr;
+    if (raw instanceof Date) {
+      shiftStr = Utilities.formatDate(raw, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else {
+      shiftStr = String(raw).substring(0, 10); // handles "2026-04-03" strings
+    }
 
-    if (shiftDate < today) {
+    if (shiftStr < todayStr) {
       sheet.getRange(i + 1, 8).setValue('expired'); // Set Status to expired
     }
   }
