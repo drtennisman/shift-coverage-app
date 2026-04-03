@@ -487,7 +487,7 @@
       <div class="setup-subtitle">Track who covers whom — keep it fair.</div>
 
       <div class="card">
-        <div class="form-group">
+        <div class="form-group" id="setupUrlGroup" style="display:none;">
           <label>Apps Script URL</label>
           <input type="url" id="setupUrl" placeholder="Paste your deployed Web App URL">
         </div>
@@ -499,7 +499,7 @@
           </select>
         </div>
 
-        <button class="btn btn-primary" id="setupBtn" onclick="handleSetup()">Connect</button>
+        <button class="btn btn-primary" id="setupBtn" onclick="handleSetup()">Get Started</button>
         <p id="setupError" style="color:#dc3545;font-size:13px;margin-top:10px;text-align:center;display:none;"></p>
       </div>
     </div>
@@ -659,7 +659,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
-let API_URL = localStorage.getItem('shiftCoverageUrl') || '';
+let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
 let adminPIN = '';
