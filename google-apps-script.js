@@ -213,6 +213,8 @@ function doPost(e) {
         new Date().toISOString(),
         ''
       ]);
+      // Poster gets -1 immediately for needing coverage
+      updateScore(data.postedBy, -1);
       return jsonResponse({ status: 'ok', id: id });
     }
 
@@ -235,9 +237,8 @@ function doPost(e) {
       sheet.getRange(row, 9).setValue(data.claimedBy); // ClaimedBy
       sheet.getRange(row, 11).setValue(new Date().toISOString()); // ClaimedAt
 
-      // Update scores
-      updateScore(data.claimedBy, 1);  // coverer gets +1
-      updateScore(postedBy, -1);       // poster gets -1
+      // Coverer gets +1 (poster already got -1 when they posted)
+      updateScore(data.claimedBy, 1);
 
       // Log to history
       var historySheet = getSheet('History');
@@ -263,6 +264,10 @@ function doPost(e) {
         return jsonResponse({ status: 'error', message: 'Can only cancel open shifts.' });
       }
 
+      // Reverse the poster's -1 since they're taking it back
+      var postedBy = sheet.getRange(row, 2).getValue();
+      updateScore(postedBy, 1);
+
       sheet.deleteRow(row);
       return jsonResponse({ status: 'ok' });
     }
@@ -277,13 +282,17 @@ function doPost(e) {
       var row = findRowByID(sheet, data.id);
       if (row === -1) return jsonResponse({ status: 'error', message: 'Shift not found.' });
 
-      // If it was claimed, reverse the scores
+      // Reverse all scores for this shift
       var status = sheet.getRange(row, 8).getValue();
-      if (status === 'claimed') {
-        var postedBy = sheet.getRange(row, 2).getValue();
-        var claimedBy = sheet.getRange(row, 9).getValue();
-        updateScore(claimedBy, -1);
+      var postedBy = sheet.getRange(row, 2).getValue();
+      if (status === 'open') {
+        // Poster had -1, reverse it
         updateScore(postedBy, 1);
+      } else if (status === 'claimed') {
+        // Poster had -1, claimer had +1, reverse both
+        var claimedBy = sheet.getRange(row, 9).getValue();
+        updateScore(postedBy, 1);
+        updateScore(claimedBy, -1);
       }
 
       sheet.deleteRow(row);

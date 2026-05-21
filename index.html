@@ -947,7 +947,7 @@ async function loadBoard() {
         <div class="shift-posted-by">Posted by ${escapeHtml(shift.PostedBy)}</div>
         <div class="shift-actions">
           ${isOwn
-            ? '<button class="btn btn-cancel-shift btn-small" onclick="cancelShift(\'' + shift.ID + '\')">Cancel Post</button>'
+            ? '<button class="btn btn-cancel-shift btn-small" onclick="cancelShift(\'' + shift.ID + '\')">Cancel Post</button><button class="btn btn-claim btn-small" onclick="claimShift(\'' + shift.ID + '\', \'' + escapeHtml(shift.PostedBy) + '\')">I\'ll Work It</button>'
             : '<button class="btn btn-claim btn-small" onclick="claimShift(\'' + shift.ID + '\', \'' + escapeHtml(shift.PostedBy) + '\')">Cover This Shift</button>'
           }
         </div>
