@@ -1,5 +1,5 @@
 // Minimal service worker for PWA "Add to Home Screen" support
-const CACHE_NAME = 'shift-coverage-v3';
+const CACHE_NAME = 'shift-coverage-v4';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(

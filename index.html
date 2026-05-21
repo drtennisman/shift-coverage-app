@@ -785,8 +785,16 @@ function enterApp() {
   document.getElementById('appHeader').style.display = 'block';
   document.getElementById('bottomNav').style.display = 'flex';
   document.getElementById('headerUser').textContent = currentUser;
-  showScreen('homeScreen');
-  renderSchedule();
+  // Default to the Board screen
+  showScreen('boardScreen');
+  document.querySelectorAll('.nav-tab').forEach(t => {
+    t.classList.remove('active');
+    t.querySelector('svg').setAttribute('fill', '#999');
+  });
+  const boardTab = document.querySelector('[data-screen="boardScreen"]');
+  boardTab.classList.add('active');
+  boardTab.querySelector('svg').setAttribute('fill', '#052d54');
+  loadBoard();
 }
 
 // ─── Schedule Data ────────────────────────────────────
