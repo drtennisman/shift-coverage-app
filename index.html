@@ -513,7 +513,7 @@
 
     <!-- ═══ BOARD SCREEN ═══ -->
     <div id="boardScreen" class="screen">
-      <button class="btn btn-primary" onclick="showScreen('postScreen')" style="margin-bottom:16px;">
+      <button class="btn btn-primary" onclick="showScreen('postScreen'); populatePostForWhom();" style="margin-bottom:16px;">
         + Post a Shift to Cover
       </button>
       <div class="section-title">Open Shifts</div>
@@ -527,6 +527,12 @@
       <div class="card">
         <div class="section-title" style="margin-bottom:16px;">Post a Shift</div>
 
+        <div class="form-group">
+          <label>Who needs this covered?</label>
+          <select id="postForWhom">
+            <option value="">Loading staff...</option>
+          </select>
+        </div>
         <div class="form-group">
           <label>Shift Date</label>
           <input type="date" id="postDate">
@@ -848,6 +854,7 @@ function navigate(screenId, tabEl) {
   // Load data for the screen
   if (screenId === 'homeScreen') renderSchedule();
   else if (screenId === 'boardScreen') loadBoard();
+  else if (screenId === 'postScreen') populatePostForWhom();
   else if (screenId === 'scoresScreen') loadScores();
   else if (screenId === 'historyScreen') loadHistory();
   else if (screenId === 'adminScreen') {
@@ -969,13 +976,42 @@ async function cancelShift(id) {
 }
 
 // ─── Post Shift ───────────────────────────────────────
+async function populatePostForWhom() {
+  const select = document.getElementById('postForWhom');
+  // If already populated with real names, just reset default
+  if (cachedStaff.length) {
+    select.value = currentUser;
+    return;
+  }
+  // Otherwise fetch staff list
+  try {
+    const resp = await fetchAPI('getStaff');
+    if (resp.status === 'ok' && resp.staff) {
+      cachedStaff = resp.staff;
+    }
+  } catch (e) {}
+  select.innerHTML = '';
+  cachedStaff.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    select.appendChild(opt);
+  });
+  select.value = currentUser;
+}
+
 async function submitShift() {
+  const postFor = document.getElementById('postForWhom').value;
   const date = document.getElementById('postDate').value;
   const start = document.getElementById('postStart').value;
   const end = document.getElementById('postEnd').value;
   const location = document.getElementById('postLocation').value.trim();
   const notes = document.getElementById('postNotes').value.trim();
 
+  if (!postFor) {
+    showToast('Please select who needs this covered.');
+    return;
+  }
   if (!date || !start || !end) {
     showToast('Please fill in date and times.');
     return;
@@ -984,7 +1020,7 @@ async function submitShift() {
   showToast('Posting shift...');
   await postAPI({
     action: 'postShift',
-    postedBy: currentUser,
+    postedBy: postFor,
     shiftDate: date,
     startTime: start,
     endTime: end,
@@ -993,6 +1029,7 @@ async function submitShift() {
   });
 
   // Clear form
+  document.getElementById('postForWhom').value = currentUser;
   document.getElementById('postDate').value = '';
   document.getElementById('postStart').value = '';
   document.getElementById('postEnd').value = '';
