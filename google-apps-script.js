@@ -154,24 +154,86 @@ function doGet(e) {
     }
 
     if (action === 'getSchedule') {
+      var tz = Session.getScriptTimeZone();
       var schedule = sheetToObjects(getSheet('Schedule'));
-      // Group by day, preserving row order
-      var dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      var grouped = {};
-      dayOrder.forEach(function(d) { grouped[d] = []; });
+      var shiftsData = sheetToObjects(getSheet('Shifts'));
+      var dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+      // Group template shifts by day name
+      var templateByDay = {};
+      dayNames.forEach(function(d) { templateByDay[d] = []; });
       schedule.forEach(function(row) {
         var day = String(row.Day).trim();
-        if (grouped[day]) {
-          grouped[day].push({
+        if (templateByDay[day]) {
+          templateByDay[day].push({
             time: String(row.Time).trim(),
             location: String(row.Location).trim(),
             staff: String(row.Staff).trim()
           });
         }
       });
-      var result = dayOrder.map(function(day) {
-        return { day: day, shifts: grouped[day] };
-      });
+
+      // Build next 7 days
+      var result = [];
+      for (var d = 0; d < 7; d++) {
+        var date = new Date();
+        date.setDate(date.getDate() + d);
+        var dateStr = Utilities.formatDate(date, tz, 'yyyy-MM-dd');
+        var dayName = dayNames[date.getDay()];
+        var templateShifts = templateByDay[dayName] || [];
+
+        // Find posted shifts for this date
+        var postedForDate = shiftsData.filter(function(s) {
+          var sd = (s.ShiftDate instanceof Date)
+            ? Utilities.formatDate(s.ShiftDate, tz, 'yyyy-MM-dd')
+            : String(s.ShiftDate).substring(0, 10);
+          return sd === dateStr && (s.Status === 'open' || s.Status === 'claimed');
+        });
+
+        // Build shifts for this day
+        var dayShifts = templateShifts.map(function(tmpl) {
+          // Check if the scheduled staff member posted a shift for this date
+          var match = null;
+          for (var i = 0; i < postedForDate.length; i++) {
+            if (postedForDate[i].PostedBy === tmpl.staff) {
+              match = postedForDate[i];
+              break;
+            }
+          }
+
+          if (match && match.Status === 'open') {
+            return {
+              time: tmpl.time,
+              location: tmpl.location,
+              staff: tmpl.staff,
+              status: 'needs_coverage'
+            };
+          } else if (match && match.Status === 'claimed') {
+            return {
+              time: tmpl.time,
+              location: tmpl.location,
+              staff: String(match.ClaimedBy),
+              originalStaff: tmpl.staff,
+              status: 'covered'
+            };
+          } else {
+            return {
+              time: tmpl.time,
+              location: tmpl.location,
+              staff: tmpl.staff,
+              status: 'normal'
+            };
+          }
+        });
+
+        result.push({
+          day: dayName,
+          date: dateStr,
+          isToday: d === 0,
+          shifts: dayShifts
+        });
+      }
+
       return jsonResponse({ status: 'ok', schedule: result });
     }
 

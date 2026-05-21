@@ -293,6 +293,42 @@
       color: #052d54;
       text-align: right;
     }
+    .schedule-shift-staff.needs-coverage {
+      color: #dc3545;
+    }
+    .schedule-shift-staff.covered {
+      color: #28a745;
+    }
+    .schedule-original {
+      font-size: 11px;
+      color: #999;
+      text-decoration: line-through;
+    }
+    .schedule-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      margin-left: 4px;
+      vertical-align: middle;
+    }
+    .schedule-badge.open {
+      background: #f8d7da;
+      color: #721c24;
+    }
+    .schedule-badge.swap {
+      background: #d4edda;
+      color: #155724;
+    }
+    .schedule-date-sub {
+      font-size: 12px;
+      font-weight: 400;
+      color: rgba(5, 45, 84, 0.6);
+      margin-left: 6px;
+    }
     .schedule-closed {
       text-align: center;
       padding: 20px;
@@ -809,28 +845,40 @@ async function renderSchedule() {
     if (resp.status !== 'ok') throw new Error(resp.message);
 
     const schedule = resp.schedule || [];
-    const today = new Date().getDay(); // 0=Sun, 1=Mon, ...
     container.innerHTML = '';
 
     schedule.forEach(day => {
-      const dayIndex = DAY_INDEXES[day.day];
-      const isToday = dayIndex === today;
       const card = document.createElement('div');
-      card.className = 'card schedule-day' + (isToday ? ' schedule-today' : '');
+      card.className = 'card schedule-day' + (day.isToday ? ' schedule-today' : '');
 
-      let inner = `<div class="schedule-day-header">${escapeHtml(day.day)}${isToday ? ' — Today' : ''}</div>`;
+      const dateLabel = formatDate(day.date);
+      let inner = `<div class="schedule-day-header">${escapeHtml(day.day)}${day.isToday ? ' — Today' : ''}<span class="schedule-date-sub">${dateLabel}</span></div>`;
 
       if (day.shifts.length === 0) {
         inner += '<div class="schedule-closed">No shifts</div>';
       } else {
         day.shifts.forEach(shift => {
+          let staffHtml = '';
+          let staffClass = 'schedule-shift-staff';
+
+          if (shift.status === 'needs_coverage') {
+            staffClass += ' needs-coverage';
+            staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge open">Needs Cover</span>';
+          } else if (shift.status === 'covered') {
+            staffClass += ' covered';
+            staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge swap">Covering</span>';
+            staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
+          } else {
+            staffHtml = escapeHtml(shift.staff);
+          }
+
           inner += `
             <div class="schedule-shift">
               <div class="schedule-shift-info">
                 <div class="schedule-shift-time">${escapeHtml(shift.time)}</div>
                 <div class="schedule-shift-location">${escapeHtml(shift.location)}</div>
               </div>
-              <div class="schedule-shift-staff">${escapeHtml(shift.staff)}</div>
+              <div class="${staffClass}">${staffHtml}</div>
             </div>`;
         });
       }
