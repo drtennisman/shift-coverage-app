@@ -254,6 +254,23 @@
       height: 22px;
     }
     .nav-tab.active svg { fill: #052d54; }
+    .nav-tab { position: relative; }
+    .nav-badge {
+      position: absolute;
+      top: 4px;
+      right: 50%;
+      transform: translateX(14px);
+      background: #dc3545;
+      color: #fff;
+      font-size: 10px;
+      font-weight: 700;
+      min-width: 16px;
+      height: 16px;
+      line-height: 16px;
+      border-radius: 8px;
+      text-align: center;
+      padding: 0 4px;
+    }
 
     /* ─── Schedule ─────────────────────────────────── */
     .schedule-day {
@@ -669,6 +686,7 @@
       Home
     </button>
     <button class="nav-tab" onclick="navigate('boardScreen', this)" data-screen="boardScreen">
+      <span class="nav-badge" id="boardBadge" style="display:none;"></span>
       <svg viewBox="0 0 24 24" fill="#999"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-2 10H7v-2h10v2z"/></svg>
       Board
     </button>
@@ -831,6 +849,23 @@ function enterApp() {
   boardTab.classList.add('active');
   boardTab.querySelector('svg').setAttribute('fill', '#052d54');
   loadBoard();
+  updateBoardBadge();
+}
+
+// ─── Board Badge ─────────────────────────────────────
+async function updateBoardBadge() {
+  try {
+    const resp = await fetchAPI('getShifts');
+    const badge = document.getElementById('boardBadge');
+    if (resp.status === 'ok' && resp.shifts && resp.shifts.length > 0) {
+      badge.textContent = resp.shifts.length;
+      badge.style.display = 'block';
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch (e) {
+    // Silently fail
+  }
 }
 
 // ─── Schedule Data ────────────────────────────────────
@@ -906,6 +941,7 @@ function navigate(screenId, tabEl) {
   });
   tabEl.classList.add('active');
   tabEl.querySelector('svg').setAttribute('fill', '#052d54');
+  updateBoardBadge();
 
   // Load data for the screen
   if (screenId === 'homeScreen') renderSchedule();
