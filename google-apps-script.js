@@ -5,7 +5,7 @@
  *   1. Create a new Google Sheet with these tabs:
  *        • Shifts   — Headers: ID | PostedBy | ShiftDate | StartTime | EndTime | Location | Notes | Status | ClaimedBy | PostedAt | ClaimedAt
  *        • History  — Headers: ID | PostedBy | CoveredBy | ShiftDate | CompletedAt
- *        • Staff    — Headers: Name | Score | IsAdmin
+ *        • Staff    — Headers: Name | Score | IsAdmin | Email
  *        • Config   — Headers: Key | Value
  *   2. In the Staff tab, add your staff names (one per row) with Score = 0.
  *      Mark your admin row with IsAdmin = TRUE.
@@ -277,6 +277,8 @@ function doPost(e) {
       ]);
       // Poster gets -1 immediately for needing coverage
       updateScore(data.postedBy, -1);
+      // Notify all other staff that a shift needs coverage
+      notifyAllStaff_ShiftPosted(data.postedBy, data.shiftDate, data.startTime, data.endTime, data.location || '');
       return jsonResponse({ status: 'ok', id: id });
     }
 
@@ -311,6 +313,14 @@ function doPost(e) {
         shiftDate,
         new Date().toISOString()
       ]);
+
+      // Notify the poster that their shift has been covered
+      var startTime = sheet.getRange(row, 4).getValue();
+      var endTime = sheet.getRange(row, 5).getValue();
+      var tz = Session.getScriptTimeZone();
+      var startStr = (startTime instanceof Date) ? Utilities.formatDate(startTime, tz, 'HH:mm') : String(startTime);
+      var endStr = (endTime instanceof Date) ? Utilities.formatDate(endTime, tz, 'HH:mm') : String(endTime);
+      notifyPoster_ShiftClaimed(postedBy, data.claimedBy, shiftDate, startStr, endStr);
 
       return jsonResponse({ status: 'ok' });
     }
@@ -423,5 +433,101 @@ function updateScore(name, delta) {
       staffSheet.getRange(i + 1, 2).setValue(current + delta);
       return;
     }
+  }
+}
+
+// ─── Email Helpers ─────────────────────────────────────────
+
+function getStaffEmails() {
+  var staffSheet = getSheet('Staff');
+  var data = staffSheet.getDataRange().getValues();
+  var headers = data[0];
+  var emailCol = -1;
+  for (var j = 0; j < headers.length; j++) {
+    if (String(headers[j]).trim().toLowerCase() === 'email') {
+      emailCol = j;
+      break;
+    }
+  }
+  if (emailCol === -1) return {};
+  var emails = {};
+  for (var i = 1; i < data.length; i++) {
+    var name = data[i][0];
+    var email = data[i][emailCol];
+    if (name && email) emails[name] = String(email).trim();
+  }
+  return emails;
+}
+
+function formatTimeForEmail(timeStr) {
+  if (!timeStr) return '';
+  var parts = String(timeStr).split(':');
+  var h = parseInt(parts[0]);
+  var m = parts[1];
+  var ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return h + ':' + m + ' ' + ampm;
+}
+
+function formatDateForEmail(dateStr) {
+  if (!dateStr) return '';
+  var d = new Date(dateStr + 'T12:00:00');
+  var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate();
+}
+
+function notifyAllStaff_ShiftPosted(postedBy, shiftDate, startTime, endTime, location) {
+  try {
+    var emails = getStaffEmails();
+    var dateStr = formatDateForEmail(shiftDate);
+    var timeStr = formatTimeForEmail(startTime) + ' – ' + formatTimeForEmail(endTime);
+    var locationStr = location ? ' at ' + location : '';
+    var subject = 'Shift Coverage Needed — ' + postedBy + ' on ' + dateStr;
+    var body = postedBy + ' needs someone to cover their shift:\n\n'
+      + '📅  ' + dateStr + '\n'
+      + '🕐  ' + timeStr + locationStr + '\n\n'
+      + 'Open the Shift Coverage app to claim it:\n'
+      + 'https://drtennisman.github.io/shift-coverage-app/';
+
+    var recipients = [];
+    for (var name in emails) {
+      if (name !== postedBy && emails[name]) {
+        recipients.push(emails[name]);
+      }
+    }
+    if (recipients.length > 0) {
+      MailApp.sendEmail({
+        to: recipients.join(','),
+        subject: subject,
+        body: body
+      });
+    }
+  } catch (e) {
+    // Don't fail the main action if email fails
+  }
+}
+
+function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, endTime) {
+  try {
+    var emails = getStaffEmails();
+    var posterEmail = emails[postedBy];
+    if (!posterEmail) return;
+
+    var dateStr = formatDateForEmail(shiftDate);
+    var timeStr = formatTimeForEmail(startTime) + ' – ' + formatTimeForEmail(endTime);
+    var subject = 'Your Shift Is Covered! — ' + claimedBy + ' on ' + dateStr;
+    var body = 'Good news! ' + claimedBy + ' is covering your shift:\n\n'
+      + '📅  ' + dateStr + '\n'
+      + '🕐  ' + timeStr + '\n\n'
+      + 'You\'re all set!';
+
+    MailApp.sendEmail({
+      to: posterEmail,
+      subject: subject,
+      body: body
+    });
+  } catch (e) {
+    // Don't fail the main action if email fails
   }
 }
