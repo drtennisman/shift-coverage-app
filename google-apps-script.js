@@ -438,6 +438,15 @@ function updateScore(name, delta) {
 
 // ─── Email Helpers ─────────────────────────────────────────
 
+function getManagerEmail() {
+  var config = getSheet('Config');
+  var data = config.getDataRange().getValues();
+  for (var i = 1; i < data.length; i++) {
+    if (data[i][0] === 'ManagerEmail') return String(data[i][1]).trim();
+  }
+  return '';
+}
+
 function getStaffEmails() {
   var staffSheet = getSheet('Staff');
   var data = staffSheet.getDataRange().getValues();
@@ -496,6 +505,11 @@ function notifyAllStaff_ShiftPosted(postedBy, shiftDate, startTime, endTime, loc
         recipients.push(emails[name]);
       }
     }
+    // Always include manager
+    var managerEmail = getManagerEmail();
+    if (managerEmail && recipients.indexOf(managerEmail) === -1) {
+      recipients.push(managerEmail);
+    }
     if (recipients.length > 0) {
       MailApp.sendEmail({
         to: recipients.join(','),
@@ -512,21 +526,28 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   try {
     var emails = getStaffEmails();
     var posterEmail = emails[postedBy];
-    if (!posterEmail) return;
+    var managerEmail = getManagerEmail();
 
     var dateStr = formatDateForEmail(shiftDate);
     var timeStr = formatTimeForEmail(startTime) + ' – ' + formatTimeForEmail(endTime);
-    var subject = 'Your Shift Is Covered! — ' + claimedBy + ' on ' + dateStr;
-    var body = 'Good news! ' + claimedBy + ' is covering your shift:\n\n'
+    var subject = 'Shift Covered! — ' + claimedBy + ' covering ' + postedBy + ' on ' + dateStr;
+    var body = claimedBy + ' is covering ' + postedBy + '\'s shift:\n\n'
       + '📅  ' + dateStr + '\n'
       + '🕐  ' + timeStr + '\n\n'
-      + 'You\'re all set!';
+      + 'This shift is all set!';
 
-    MailApp.sendEmail({
-      to: posterEmail,
-      subject: subject,
-      body: body
-    });
+    var recipients = [];
+    if (posterEmail) recipients.push(posterEmail);
+    if (managerEmail && recipients.indexOf(managerEmail) === -1) {
+      recipients.push(managerEmail);
+    }
+    if (recipients.length > 0) {
+      MailApp.sendEmail({
+        to: recipients.join(','),
+        subject: subject,
+        body: body
+      });
+    }
   } catch (e) {
     // Don't fail the main action if email fails
   }
