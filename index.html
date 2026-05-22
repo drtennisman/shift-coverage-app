@@ -48,6 +48,9 @@
       margin: 0 auto;
       padding: 16px;
     }
+    @media (min-width: 600px) {
+      .container { max-width: 700px; }
+    }
 
     /* ─── Screens ──────────────────────────────────── */
     .screen { display: none; }
@@ -273,8 +276,18 @@
     }
 
     /* ─── Schedule ─────────────────────────────────── */
+    .schedule-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    @media (min-width: 600px) {
+      .schedule-grid {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
     .schedule-day {
-      margin-bottom: 6px;
+      margin-bottom: 0;
     }
     .schedule-day-header {
       font-size: 15px;
@@ -560,8 +573,8 @@
 
     <!-- ═══ HOME SCREEN ═══ -->
     <div id="homeScreen" class="screen">
-      <div class="section-title">Weekly Schedule</div>
-      <div id="scheduleList"></div>
+      <div class="section-title">2-Week Schedule</div>
+      <div id="scheduleList" class="schedule-grid"></div>
     </div>
 
     <!-- ═══ BOARD SCREEN ═══ -->

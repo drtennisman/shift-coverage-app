@@ -173,9 +173,9 @@ function doGet(e) {
         }
       });
 
-      // Build next 7 days
+      // Build next 14 days
       var result = [];
-      for (var d = 0; d < 7; d++) {
+      for (var d = 0; d < 14; d++) {
         var date = new Date();
         date.setDate(date.getDate() + d);
         var dateStr = Utilities.formatDate(date, tz, 'yyyy-MM-dd');
