@@ -399,9 +399,9 @@ function doPost(e) {
           var dateStr = formatDateForEmail(data.shiftDate);
           var subject = 'Open Shift Claimed — ' + data.claimedBy + ' on ' + dateStr;
           var body = data.claimedBy + ' picked up an open shift:\n\n'
-            + '📅  ' + dateStr + '\n'
-            + '🕐  ' + (data.time || '') + '\n'
-            + '📍  ' + (data.location || '') + '\n\n'
+            + 'Date: ' + dateStr + '\n'
+            + 'Time: ' + (data.time || '') + '\n'
+            + 'Location: ' + (data.location || '') + '\n\n'
             + 'Score: +1 for ' + data.claimedBy;
           MailApp.sendEmail({ to: managerEmail, subject: subject, body: body });
         }
@@ -563,9 +563,15 @@ function formatTimeForEmail(timeStr) {
   return h + ':' + m + ' ' + ampm;
 }
 
-function formatDateForEmail(dateStr) {
-  if (!dateStr) return '';
-  var d = new Date(dateStr + 'T12:00:00');
+function formatDateForEmail(dateInput) {
+  if (!dateInput) return '';
+  var d;
+  if (dateInput instanceof Date) {
+    d = dateInput;
+  } else {
+    d = new Date(String(dateInput).substring(0, 10) + 'T12:00:00');
+  }
+  if (isNaN(d.getTime())) return String(dateInput);
   var days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   return days[d.getDay()] + ', ' + months[d.getMonth()] + ' ' + d.getDate();
@@ -579,8 +585,8 @@ function notifyAllStaff_ShiftPosted(postedBy, shiftDate, startTime, endTime, loc
     var locationStr = location ? ' at ' + location : '';
     var subject = 'Shift Coverage Needed — ' + postedBy + ' on ' + dateStr;
     var body = postedBy + ' needs someone to cover their shift:\n\n'
-      + '📅  ' + dateStr + '\n'
-      + '🕐  ' + timeStr + locationStr + '\n\n'
+      + 'Date: ' + dateStr + '\n'
+      + 'Time: ' + timeStr + locationStr + '\n\n'
       + 'Open the Shift Coverage app to claim it:\n'
       + 'https://drtennisman.github.io/shift-coverage-app/';
 
@@ -617,8 +623,8 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
     var timeStr = formatTimeForEmail(startTime) + ' – ' + formatTimeForEmail(endTime);
     var subject = 'Shift Covered! — ' + claimedBy + ' covering ' + postedBy + ' on ' + dateStr;
     var body = claimedBy + ' is covering ' + postedBy + '\'s shift:\n\n'
-      + '📅  ' + dateStr + '\n'
-      + '🕐  ' + timeStr + '\n\n'
+      + 'Date: ' + dateStr + '\n'
+      + 'Time: ' + timeStr + '\n\n'
       + 'This shift is all set!';
 
     var recipients = [];
