@@ -329,6 +329,22 @@
     .schedule-shift-staff.covered {
       color: #28a745;
     }
+    .schedule-shift-staff.open-shift {
+      color: #e67e22;
+    }
+    .btn-claim-open {
+      display: inline-block;
+      background: #28a745;
+      color: #fff;
+      border: none;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .btn-claim-open:active { opacity: 0.8; }
     .schedule-original {
       font-size: 11px;
       color: #999;
@@ -352,6 +368,10 @@
     .schedule-badge.swap {
       background: #d4edda;
       color: #155724;
+    }
+    .schedule-badge.available {
+      background: #ffeaa7;
+      color: #856404;
     }
     .schedule-date-sub {
       font-size: 12px;
@@ -909,7 +929,11 @@ async function renderSchedule() {
           let staffHtml = '';
           let staffClass = 'schedule-shift-staff';
 
-          if (shift.status === 'needs_coverage') {
+          if (shift.status === 'open_shift') {
+            staffClass += ' open-shift';
+            staffHtml = '<span class="schedule-badge available">Available</span>';
+            staffHtml += '<br><button class="btn-claim-open" onclick="claimOpenShift(\'' + day.date + '\', \'' + escapeHtml(shift.time) + '\', \'' + escapeHtml(shift.location) + '\')">Claim +1</button>';
+          } else if (shift.status === 'needs_coverage') {
             staffClass += ' needs-coverage';
             staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge open">Needs Cover</span>';
           } else if (shift.status === 'covered') {
@@ -938,6 +962,23 @@ async function renderSchedule() {
   } catch (err) {
     container.innerHTML = '<div class="empty-state"><p>Could not load schedule. Pull to refresh.</p></div>';
   }
+}
+
+async function claimOpenShift(date, time, location) {
+  showConfirm(
+    'Claim this open shift for +1 point?',
+    async () => {
+      showToast('Claiming shift...');
+      await postAPI({
+        action: 'claimOpenShift',
+        claimedBy: currentUser,
+        shiftDate: date,
+        time: time,
+        location: location
+      });
+      setTimeout(() => renderSchedule(), 1200);
+    }
+  );
 }
 
 // ─── Navigation ───────────────────────────────────────

@@ -192,7 +192,43 @@ function doGet(e) {
 
         // Build shifts for this day
         var dayShifts = templateShifts.map(function(tmpl) {
-          // Check if the scheduled staff member posted a shift for this date
+          var isOpen = String(tmpl.staff).trim().toLowerCase() === 'open';
+
+          if (isOpen) {
+            // Check if someone already claimed this open shift
+            var claimed = null;
+            for (var i = 0; i < postedForDate.length; i++) {
+              if (postedForDate[i].PostedBy === 'Open' && postedForDate[i].Status === 'claimed') {
+                // Match by time to handle multiple open shifts on same day
+                var shiftTime = String(postedForDate[i].StartTime);
+                var tmplTime = tmpl.time;
+                if (tmplTime.indexOf(shiftTime) !== -1 || shiftTime === tmplTime) {
+                  claimed = postedForDate[i];
+                  break;
+                }
+              }
+            }
+
+            if (claimed) {
+              return {
+                time: tmpl.time,
+                location: tmpl.location,
+                staff: String(claimed.ClaimedBy),
+                originalStaff: 'Open',
+                status: 'covered'
+              };
+            } else {
+              return {
+                time: tmpl.time,
+                location: tmpl.location,
+                staff: 'Open',
+                date: dateStr,
+                status: 'open_shift'
+              };
+            }
+          }
+
+          // Regular staff — check if they posted a shift for this date
           var match = null;
           for (var i = 0; i < postedForDate.length; i++) {
             if (postedForDate[i].PostedBy === tmpl.staff) {
@@ -323,6 +359,55 @@ function doPost(e) {
       notifyPoster_ShiftClaimed(postedBy, data.claimedBy, shiftDate, startStr, endStr);
 
       return jsonResponse({ status: 'ok' });
+    }
+
+    // ── Claim an open (unfilled) shift from the schedule ──
+    if (action === 'claimOpenShift') {
+      var sheet = getSheet('Shifts');
+      var id = String(Date.now());
+      sheet.appendRow([
+        id,
+        'Open',
+        data.shiftDate,
+        data.startTime || '',
+        data.endTime || '',
+        data.location || '',
+        '',
+        'claimed',
+        data.claimedBy,
+        new Date().toISOString(),
+        new Date().toISOString()
+      ]);
+
+      // Claimer gets +1, nobody gets -1
+      updateScore(data.claimedBy, 1);
+
+      // Log to history
+      var historySheet = getSheet('History');
+      historySheet.appendRow([
+        id,
+        'Open',
+        data.claimedBy,
+        data.shiftDate,
+        new Date().toISOString()
+      ]);
+
+      // Notify manager
+      try {
+        var managerEmail = getManagerEmail();
+        if (managerEmail) {
+          var dateStr = formatDateForEmail(data.shiftDate);
+          var subject = 'Open Shift Claimed — ' + data.claimedBy + ' on ' + dateStr;
+          var body = data.claimedBy + ' picked up an open shift:\n\n'
+            + '📅  ' + dateStr + '\n'
+            + '🕐  ' + (data.time || '') + '\n'
+            + '📍  ' + (data.location || '') + '\n\n'
+            + 'Score: +1 for ' + data.claimedBy;
+          MailApp.sendEmail({ to: managerEmail, subject: subject, body: body });
+        }
+      } catch (e) {}
+
+      return jsonResponse({ status: 'ok', id: id });
     }
 
     // ── Cancel own shift (before claimed) ──
@@ -551,4 +636,10 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   } catch (e) {
     // Don't fail the main action if email fails
   }
+}
+
+// ─── Test Email (run manually to authorize email permissions) ──
+
+function testEmail() {
+  MailApp.sendEmail('jfreeman@heritagegolfgroup.com', 'Shift Coverage Test', 'If you got this, email notifications are working!');
 }
