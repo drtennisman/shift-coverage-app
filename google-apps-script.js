@@ -397,7 +397,7 @@ function doPost(e) {
         var managerEmail = getManagerEmail();
         if (managerEmail) {
           var dateStr = formatDateForEmail(data.shiftDate);
-          var subject = 'Open Shift Claimed — ' + data.claimedBy + ' on ' + dateStr;
+          var subject = 'Open Shift Claimed - ' + data.claimedBy + ' on ' + dateStr;
           var body = data.claimedBy + ' picked up an open shift:\n\n'
             + 'Date: ' + dateStr + '\n'
             + 'Time: ' + (data.time || '') + '\n'
@@ -581,9 +581,9 @@ function notifyAllStaff_ShiftPosted(postedBy, shiftDate, startTime, endTime, loc
   try {
     var emails = getStaffEmails();
     var dateStr = formatDateForEmail(shiftDate);
-    var timeStr = formatTimeForEmail(startTime) + ' – ' + formatTimeForEmail(endTime);
+    var timeStr = formatTimeForEmail(startTime) + ' - ' + formatTimeForEmail(endTime);
     var locationStr = location ? ' at ' + location : '';
-    var subject = 'Shift Coverage Needed — ' + postedBy + ' on ' + dateStr;
+    var subject = 'Shift Coverage Needed - ' + postedBy + ' on ' + dateStr;
     var body = postedBy + ' needs someone to cover their shift:\n\n'
       + 'Date: ' + dateStr + '\n'
       + 'Time: ' + timeStr + locationStr + '\n\n'
@@ -620,8 +620,8 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
     var managerEmail = getManagerEmail();
 
     var dateStr = formatDateForEmail(shiftDate);
-    var timeStr = formatTimeForEmail(startTime) + ' – ' + formatTimeForEmail(endTime);
-    var subject = 'Shift Covered! — ' + claimedBy + ' covering ' + postedBy + ' on ' + dateStr;
+    var timeStr = formatTimeForEmail(startTime) + ' - ' + formatTimeForEmail(endTime);
+    var subject = 'Shift Covered! - ' + claimedBy + ' covering ' + postedBy + ' on ' + dateStr;
     var body = claimedBy + ' is covering ' + postedBy + '\'s shift:\n\n'
       + 'Date: ' + dateStr + '\n'
       + 'Time: ' + timeStr + '\n\n'
