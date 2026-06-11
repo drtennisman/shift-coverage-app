@@ -683,6 +683,8 @@
 
       <!-- Admin panel (hidden until PIN verified) -->
       <div id="adminPanel" style="display:none;">
+        <!-- Backend version check -->
+        <p id="versionStatus" style="text-align:center;font-size:12px;color:#999;margin-bottom:12px;"></p>
         <!-- Manage Staff -->
         <div class="card admin-section">
           <h3>Manage Staff</h3>
@@ -753,6 +755,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
+const APP_VERSION = 10; // must match VERSION in google-apps-script.js
 let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
@@ -902,8 +905,6 @@ async function updateBoardBadge() {
 }
 
 // ─── Schedule Data ────────────────────────────────────
-const DAY_INDEXES = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };
-
 async function renderSchedule() {
   const container = document.getElementById('scheduleList');
   container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
@@ -969,14 +970,19 @@ async function claimOpenShift(date, time, location) {
     'Claim this open shift for +1 point?',
     async () => {
       showToast('Claiming shift...');
-      await postAPI({
+      const r = await postAPI({
         action: 'claimOpenShift',
         claimedBy: currentUser,
         shiftDate: date,
         time: time,
         location: location
       });
-      setTimeout(() => renderSchedule(), 1200);
+      if (r.status !== 'ok') {
+        showToast(r.message || 'Could not claim shift.');
+      } else {
+        showToast('Shift claimed! +1 for you.');
+      }
+      renderSchedule();
     }
   );
 }
@@ -1024,20 +1030,41 @@ function refreshCurrentScreen() {
 }
 
 // ─── API Helper ───────────────────────────────────────
-async function fetchAPI(action) {
-  const url = API_URL + '?action=' + encodeURIComponent(action);
+async function fetchAPI(action, params) {
+  let url = API_URL + '?action=' + encodeURIComponent(action);
+  if (params) {
+    for (const key in params) {
+      url += '&' + encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+    }
+  }
   const resp = await fetch(url);
   return await resp.json();
 }
 
 async function postAPI(data) {
-  await fetch(API_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(data)
-  });
-  // no-cors means we can't read the response — assume success
+  try {
+    const resp = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify(data)
+    });
+    return await resp.json();
+  } catch (e) {
+    // Fallback: some setups block reading the response. Fire blind like
+    // the old behavior, wait for the write to land, and assume success.
+    try {
+      await fetch(API_URL, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify(data)
+      });
+    } catch (e2) {
+      return { status: 'error', message: 'No connection — check your signal and try again.' };
+    }
+    await new Promise(r => setTimeout(r, 1200));
+    return { status: 'ok', blind: true };
+  }
 }
 
 // ─── Board ────────────────────────────────────────────
@@ -1099,13 +1126,21 @@ async function loadBoard() {
 }
 
 async function claimShift(id, postedBy) {
+  const isOwn = postedBy === currentUser;
   showConfirm(
-    'Cover ' + postedBy + '\'s shift? This will give you +1 and them -1.',
+    isOwn
+      ? 'Take your own shift back? You\'ll get +1 (netting out your -1).'
+      : 'Cover ' + postedBy + '\'s shift? This will give you +1 and them -1.',
     async () => {
       showToast('Claiming shift...');
-      await postAPI({ action: 'claimShift', id: id, claimedBy: currentUser });
-      // Wait a moment then refresh
-      setTimeout(() => loadBoard(), 1200);
+      const r = await postAPI({ action: 'claimShift', id: id, claimedBy: currentUser });
+      if (r.status !== 'ok') {
+        showToast(r.message || 'Could not claim shift.');
+      } else {
+        showToast('Shift claimed!');
+      }
+      loadBoard();
+      updateBoardBadge();
     }
   );
 }
@@ -1115,8 +1150,14 @@ async function cancelShift(id) {
     'Cancel this shift request? It will be removed from the board.',
     async () => {
       showToast('Cancelling...');
-      await postAPI({ action: 'cancelShift', id: id });
-      setTimeout(() => loadBoard(), 1200);
+      const r = await postAPI({ action: 'cancelShift', id: id });
+      if (r.status !== 'ok') {
+        showToast(r.message || 'Could not cancel shift.');
+      } else {
+        showToast('Shift cancelled.');
+      }
+      loadBoard();
+      updateBoardBadge();
     }
   );
 }
@@ -1164,7 +1205,7 @@ async function submitShift() {
   }
 
   showToast('Posting shift...');
-  await postAPI({
+  const r = await postAPI({
     action: 'postShift',
     postedBy: postFor,
     shiftDate: date,
@@ -1173,6 +1214,14 @@ async function submitShift() {
     location: location,
     notes: notes
   });
+
+  if (r.status !== 'ok') {
+    // Keep the form filled so nothing is lost — just show the error
+    showToast(r.message || 'Could not post shift. Try again.');
+    return;
+  }
+
+  showToast('Shift posted!');
 
   // Clear form
   document.getElementById('postForWhom').value = currentUser;
@@ -1183,17 +1232,15 @@ async function submitShift() {
   document.getElementById('postNotes').value = '';
 
   // Navigate to board
-  setTimeout(() => {
-    showScreen('boardScreen');
-    // Reset nav tabs
-    document.querySelectorAll('.nav-tab').forEach(t => {
-      t.classList.remove('active');
-      t.querySelector('svg').setAttribute('fill', '#999');
-    });
-    document.querySelector('[data-screen="boardScreen"]').classList.add('active');
-    document.querySelector('[data-screen="boardScreen"] svg').setAttribute('fill', '#052d54');
-    loadBoard();
-  }, 1200);
+  showScreen('boardScreen');
+  document.querySelectorAll('.nav-tab').forEach(t => {
+    t.classList.remove('active');
+    t.querySelector('svg').setAttribute('fill', '#999');
+  });
+  document.querySelector('[data-screen="boardScreen"]').classList.add('active');
+  document.querySelector('[data-screen="boardScreen"] svg').setAttribute('fill', '#052d54');
+  loadBoard();
+  updateBoardBadge();
 }
 
 // ─── Scores ───────────────────────────────────────────
@@ -1267,13 +1314,24 @@ async function loadHistory() {
 async function verifyAdminPin() {
   const pin = document.getElementById('adminPinInput').value;
   const errorEl = document.getElementById('adminPinError');
+  errorEl.style.display = 'none';
 
-  // Fetch scores to check if current user is admin
   try {
-    const resp = await fetchAPI('getScores');
-    const userScore = (resp.scores || []).find(s => s.name === currentUser);
+    // Check the user is an admin AND the PIN is actually correct
+    const [scoresResp, pinResp] = await Promise.all([
+      fetchAPI('getScores'),
+      fetchAPI('verifyPin', { pin: pin })
+    ]);
+    const userScore = (scoresResp.scores || []).find(s => s.name === currentUser);
     if (!userScore || !userScore.isAdmin) {
       errorEl.textContent = 'You are not an admin.';
+      errorEl.style.display = 'block';
+      return;
+    }
+    // Older backends don't have verifyPin (status: error) — let those
+    // through like before; each admin action still checks the PIN itself.
+    if (pinResp.status === 'ok' && !pinResp.valid) {
+      errorEl.textContent = 'Incorrect PIN';
       errorEl.style.display = 'block';
       return;
     }
@@ -1291,6 +1349,20 @@ async function verifyAdminPin() {
 }
 
 async function loadAdminData() {
+  // Check whether the deployed Apps Script matches this app version
+  try {
+    const ping = await fetchAPI('ping');
+    const el = document.getElementById('versionStatus');
+    if (ping.version === APP_VERSION) {
+      el.textContent = 'App v' + APP_VERSION + ' — backend up to date ✓';
+      el.style.color = '#28a745';
+    } else {
+      el.textContent = 'App v' + APP_VERSION + ' but backend is v' + (ping.version || '?')
+        + ' — redeploy the Apps Script!';
+      el.style.color = '#dc3545';
+    }
+  } catch (e) {}
+
   // Load staff list
   try {
     const resp = await fetchAPI('getScores');
@@ -1342,32 +1414,40 @@ async function adminAddStaff() {
   if (!name) return;
 
   showToast('Adding staff...');
-  await postAPI({ action: 'addStaff', name: name, pin: adminPIN });
-  input.value = '';
-  setTimeout(() => loadAdminData(), 1200);
+  const r = await postAPI({ action: 'addStaff', name: name, pin: adminPIN });
+  if (r.status !== 'ok') {
+    showToast(r.message || 'Could not add staff.');
+  } else {
+    input.value = '';
+    showToast('Staff added.');
+  }
+  loadAdminData();
 }
 
 function adminRemoveStaff(name) {
   showConfirm('Remove ' + name + ' from the staff list?', async () => {
     showToast('Removing...');
-    await postAPI({ action: 'removeStaff', name: name, pin: adminPIN });
-    setTimeout(() => loadAdminData(), 1200);
+    const r = await postAPI({ action: 'removeStaff', name: name, pin: adminPIN });
+    showToast(r.status === 'ok' ? 'Removed.' : (r.message || 'Could not remove staff.'));
+    loadAdminData();
   });
 }
 
 function confirmResetScores() {
   showConfirm('Reset ALL scores to zero? This cannot be undone.', async () => {
     showToast('Resetting scores...');
-    await postAPI({ action: 'resetScores', pin: adminPIN });
-    setTimeout(() => loadAdminData(), 1200);
+    const r = await postAPI({ action: 'resetScores', pin: adminPIN });
+    showToast(r.status === 'ok' ? 'All scores reset.' : (r.message || 'Could not reset scores.'));
+    loadAdminData();
   });
 }
 
 function adminDeleteShift(id) {
   showConfirm('Delete this shift? If it was claimed, scores will be reversed.', async () => {
     showToast('Deleting...');
-    await postAPI({ action: 'deleteShift', id: id, pin: adminPIN });
-    setTimeout(() => loadAdminData(), 1200);
+    const r = await postAPI({ action: 'deleteShift', id: id, pin: adminPIN });
+    showToast(r.status === 'ok' ? 'Shift deleted.' : (r.message || 'Could not delete shift.'));
+    loadAdminData();
   });
 }
 

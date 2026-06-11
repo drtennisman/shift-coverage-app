@@ -7,15 +7,29 @@
  *        • History  — Headers: ID | PostedBy | CoveredBy | ShiftDate | CompletedAt
  *        • Staff    — Headers: Name | Score | IsAdmin | Email
  *        • Config   — Headers: Key | Value
- *   2. In the Staff tab, add your staff names (one per row) with Score = 0.
+ *        • Schedule — Headers: Day | Time | Location | Staff
+ *   2. In the Staff tab, add your staff names (one per row) with Score = 0
+ *      and each person's email in the Email column.
  *      Mark your admin row with IsAdmin = TRUE.
- *   3. In the Config tab, add a row: AdminPIN | 1234 (or your chosen PIN).
- *   4. Open Extensions > Apps Script and paste this code.
- *   5. Deploy > New deployment > Web app
+ *   3. In the Config tab, add rows:
+ *        AdminPIN     | 1234 (or your chosen PIN)
+ *        ManagerEmail | manager@example.com (always notified on posts/claims)
+ *   4. In the Schedule tab, add the weekly template (Day = "Monday" etc.,
+ *      Time = display string like "8:00 AM - 2:00 PM"). Put "Open" in the
+ *      Staff column for unfilled shifts staff can claim for +1.
+ *   5. Open Extensions > Apps Script and paste this code.
+ *   6. Deploy > New deployment > Web app
  *      - Execute as: Me
  *      - Who has access: Anyone
- *   6. Copy the Web App URL and paste it into the app on first use.
+ *   7. To update later: paste new code, then Deploy > Manage deployments >
+ *      edit (pencil) > Version: New version > Deploy. Bump VERSION below
+ *      so the app can confirm the new code is live.
  */
+
+// ─── Version ────────────────────────────────────────────────
+// Bump this with every deploy. The app compares it against its own
+// version and warns the admin if the deployed backend is stale.
+var VERSION = 10;
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -109,7 +123,12 @@ function doGet(e) {
     var action = (e && e.parameter && e.parameter.action) || 'ping';
 
     if (action === 'ping') {
-      return jsonResponse({ status: 'ok', message: 'Shift Coverage script is active.' });
+      return jsonResponse({ status: 'ok', message: 'Shift Coverage script is active.', version: VERSION });
+    }
+
+    if (action === 'verifyPin') {
+      var valid = String(e.parameter.pin || '') === getAdminPIN();
+      return jsonResponse({ status: 'ok', valid: valid });
     }
 
     if (action === 'getStaff') {
@@ -199,10 +218,10 @@ function doGet(e) {
             var claimed = null;
             for (var i = 0; i < postedForDate.length; i++) {
               if (postedForDate[i].PostedBy === 'Open' && postedForDate[i].Status === 'claimed') {
-                // Match by time to handle multiple open shifts on same day
-                var shiftTime = String(postedForDate[i].StartTime);
-                var tmplTime = tmpl.time;
-                if (tmplTime.indexOf(shiftTime) !== -1 || shiftTime === tmplTime) {
+                // Match by exact template time (blank never matches, so a
+                // claim can't accidentally mark the wrong slot covered)
+                var shiftTime = String(postedForDate[i].StartTime).trim();
+                if (shiftTime && shiftTime === tmpl.time) {
                   claimed = postedForDate[i];
                   break;
                 }
@@ -290,6 +309,14 @@ function doGet(e) {
 // ─── POST Endpoints ─────────────────────────────────────────
 
 function doPost(e) {
+  // Serialize all writes so two people acting at once can't corrupt
+  // scores or double-claim a shift (read-modify-write on the Sheet).
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (lockErr) {
+    return jsonResponse({ status: 'error', message: 'Server busy — please try again.' });
+  }
   try {
     var data = JSON.parse(e.postData.contents);
     var action = data.action;
@@ -340,23 +367,29 @@ function doPost(e) {
       // Coverer gets +1 (poster already got -1 when they posted)
       updateScore(data.claimedBy, 1);
 
-      // Log to history
-      var historySheet = getSheet('History');
-      historySheet.appendRow([
-        data.id,
-        postedBy,
-        data.claimedBy,
-        shiftDate,
-        new Date().toISOString()
-      ]);
+      // Log to history — but not self-covers ("I'll Work It"), which
+      // would read as "X covered X's shift" and just net out to zero
+      var isSelfCover = String(postedBy) === String(data.claimedBy);
+      if (!isSelfCover) {
+        var historySheet = getSheet('History');
+        historySheet.appendRow([
+          data.id,
+          postedBy,
+          data.claimedBy,
+          shiftDate,
+          new Date().toISOString()
+        ]);
+      }
 
-      // Notify the poster that their shift has been covered
-      var startTime = sheet.getRange(row, 4).getValue();
-      var endTime = sheet.getRange(row, 5).getValue();
-      var tz = Session.getScriptTimeZone();
-      var startStr = (startTime instanceof Date) ? Utilities.formatDate(startTime, tz, 'HH:mm') : String(startTime);
-      var endStr = (endTime instanceof Date) ? Utilities.formatDate(endTime, tz, 'HH:mm') : String(endTime);
-      notifyPoster_ShiftClaimed(postedBy, data.claimedBy, shiftDate, startStr, endStr);
+      // Notify the poster that their shift has been covered (skip self-covers)
+      if (!isSelfCover) {
+        var startTime = sheet.getRange(row, 4).getValue();
+        var endTime = sheet.getRange(row, 5).getValue();
+        var tz = Session.getScriptTimeZone();
+        var startStr = (startTime instanceof Date) ? Utilities.formatDate(startTime, tz, 'HH:mm') : String(startTime);
+        var endStr = (endTime instanceof Date) ? Utilities.formatDate(endTime, tz, 'HH:mm') : String(endTime);
+        notifyPoster_ShiftClaimed(postedBy, data.claimedBy, shiftDate, startStr, endStr);
+      }
 
       return jsonResponse({ status: 'ok' });
     }
@@ -369,8 +402,10 @@ function doPost(e) {
         id,
         'Open',
         data.shiftDate,
-        data.startTime || '',
-        data.endTime || '',
+        // Store the schedule template's display time so getSchedule can
+        // match this claim back to the exact open slot it came from.
+        data.time || '',
+        '',
         data.location || '',
         '',
         'claimed',
@@ -504,6 +539,8 @@ function doPost(e) {
 
   } catch (err) {
     return jsonResponse({ status: 'error', message: err.toString() });
+  } finally {
+    try { lock.releaseLock(); } catch (e2) {}
   }
 }
 
@@ -642,10 +679,4 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   } catch (e) {
     // Don't fail the main action if email fails
   }
-}
-
-// ─── Test Email (run manually to authorize email permissions) ──
-
-function testEmail() {
-  MailApp.sendEmail('jfreeman@heritagegolfgroup.com', 'Shift Coverage Test', 'If you got this, email notifications are working!');
 }
