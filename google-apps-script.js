@@ -29,7 +29,7 @@
 // ─── Version ────────────────────────────────────────────────
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 10;
+var VERSION = 11;
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -324,6 +324,24 @@ function doPost(e) {
     // ── Post a new shift ──
     if (action === 'postShift') {
       var sheet = getSheet('Shifts');
+
+      // Reject duplicates: same person, same date, same start time,
+      // still active. (Bryleigh once posted the same shift twice and it
+      // got covered twice — double-counting both people's scores.)
+      var existing = sheetToObjects(sheet);
+      for (var i = 0; i < existing.length; i++) {
+        var s = existing[i];
+        if (s.PostedBy === data.postedBy &&
+            String(s.ShiftDate) === String(data.shiftDate) &&
+            String(s.StartTime) === String(data.startTime) &&
+            (s.Status === 'open' || s.Status === 'claimed')) {
+          var msg = s.Status === 'open'
+            ? 'This shift is already on the board.'
+            : 'This shift was already posted — ' + s.ClaimedBy + ' is covering it.';
+          return jsonResponse({ status: 'error', message: msg });
+        }
+      }
+
       var id = String(Date.now());
       sheet.appendRow([
         id,
@@ -397,6 +415,19 @@ function doPost(e) {
     // ── Claim an open (unfilled) shift from the schedule ──
     if (action === 'claimOpenShift') {
       var sheet = getSheet('Shifts');
+
+      // Reject if this open slot is already claimed (same date + time)
+      var existingOpen = sheetToObjects(sheet);
+      for (var i = 0; i < existingOpen.length; i++) {
+        var os = existingOpen[i];
+        if (os.PostedBy === 'Open' &&
+            String(os.ShiftDate) === String(data.shiftDate) &&
+            String(os.StartTime) === String(data.time) &&
+            os.Status === 'claimed') {
+          return jsonResponse({ status: 'error', message: 'That shift was already claimed by ' + os.ClaimedBy + '.' });
+        }
+      }
+
       var id = String(Date.now());
       sheet.appendRow([
         id,
