@@ -755,7 +755,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
-const APP_VERSION = 11; // must match VERSION in google-apps-script.js
+const APP_VERSION = 12; // must match VERSION in google-apps-script.js
 let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
@@ -937,6 +937,9 @@ async function renderSchedule() {
           } else if (shift.status === 'needs_coverage') {
             staffClass += ' needs-coverage';
             staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge open">Needs Cover</span>';
+            if (shift.originalStaff) {
+              staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
+            }
           } else if (shift.status === 'covered') {
             staffClass += ' covered';
             staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge swap">Covering</span>';

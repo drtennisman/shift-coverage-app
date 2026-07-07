@@ -29,7 +29,7 @@
 // ─── Version ────────────────────────────────────────────────
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 11;
+var VERSION = 12;
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -178,6 +178,28 @@ function doGet(e) {
       var shiftsData = sheetToObjects(getSheet('Shifts'));
       var dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+      // Follow a coverage chain for one date: the scheduled person may have
+      // posted their shift, the claimer may have re-posted it, and so on.
+      // Returns who currently holds the shift, and their open post if they
+      // are looking for coverage. `visited` prevents loops (e.g. self-covers).
+      function followChain(posted, startName, visited) {
+        var current = startName;
+        var openPost = null;
+        for (var hop = 0; hop < 10; hop++) {
+          var next = null;
+          for (var i = 0; i < posted.length; i++) {
+            var p = posted[i];
+            if (visited[p.ID]) continue;
+            if (p.PostedBy === current) { next = p; break; }
+          }
+          if (!next) break;
+          visited[next.ID] = true;
+          if (next.Status === 'open') { openPost = next; break; }
+          current = String(next.ClaimedBy);
+        }
+        return { staff: current, openPost: openPost };
+      }
+
       // Group template shifts by day name
       var templateByDay = {};
       dayNames.forEach(function(d) { templateByDay[d] = []; });
@@ -229,12 +251,16 @@ function doGet(e) {
             }
 
             if (claimed) {
+              // Follow the chain past the claimer — they may have re-posted
+              var visited = {};
+              visited[claimed.ID] = true;
+              var res = followChain(postedForDate, String(claimed.ClaimedBy), visited);
               return {
                 time: tmpl.time,
                 location: tmpl.location,
-                staff: String(claimed.ClaimedBy),
+                staff: res.staff,
                 originalStaff: 'Open',
-                status: 'covered'
+                status: res.openPost ? 'needs_coverage' : 'covered'
               };
             } else {
               return {
@@ -247,27 +273,23 @@ function doGet(e) {
             }
           }
 
-          // Regular staff — check if they posted a shift for this date
-          var match = null;
-          for (var i = 0; i < postedForDate.length; i++) {
-            if (postedForDate[i].PostedBy === tmpl.staff) {
-              match = postedForDate[i];
-              break;
-            }
-          }
+          // Regular staff — follow the full coverage chain for this date
+          var res = followChain(postedForDate, tmpl.staff, {});
 
-          if (match && match.Status === 'open') {
-            return {
+          if (res.openPost) {
+            var out = {
               time: tmpl.time,
               location: tmpl.location,
-              staff: tmpl.staff,
+              staff: res.staff,
               status: 'needs_coverage'
             };
-          } else if (match && match.Status === 'claimed') {
+            if (res.staff !== tmpl.staff) out.originalStaff = tmpl.staff;
+            return out;
+          } else if (res.staff !== tmpl.staff) {
             return {
               time: tmpl.time,
               location: tmpl.location,
-              staff: String(match.ClaimedBy),
+              staff: res.staff,
               originalStaff: tmpl.staff,
               status: 'covered'
             };
