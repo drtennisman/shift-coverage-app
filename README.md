@@ -47,3 +47,9 @@ Shift `Status` values: `open` → `claimed`, or `expired` (auto-set when an open
 4. Verify: open the app's Admin tab — it shows "backend up to date ✓" (or hit `<web app URL>?action=ping` and check the `version` field).
 
 If emails ever stop sending after a fresh authorization is needed, run any function from the Apps Script editor once and approve the Gmail permission prompt.
+
+## Daily coverage reminder
+
+`sendCoverageDigest` emails all staff (plus the manager) a list of shifts still needing coverage, with anything within 48 hours flagged **URGENT**. It stays silent on days when nothing is open.
+
+To turn it on: after deploying, open the Apps Script editor, select `setupCoverageReminder` from the function dropdown, and click **Run** once. That schedules the digest for ~8 AM daily. Re-running it is safe — it clears the old trigger first so reminders never stack. To test immediately, run `sendCoverageDigest` by hand.

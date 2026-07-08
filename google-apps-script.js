@@ -29,7 +29,7 @@
 // ─── Version ────────────────────────────────────────────────
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 12;
+var VERSION = 13;
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -732,4 +732,88 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   } catch (e) {
     // Don't fail the main action if email fails
   }
+}
+
+// ─── Daily Coverage Reminder ────────────────────────────────
+// Run setupCoverageReminder() ONCE from the editor to schedule this
+// for 8 AM every day. sendCoverageDigest emails everyone the list of
+// shifts still needing coverage, with anything within 48 hours flagged
+// URGENT. Stays silent on days when nothing is open.
+
+function sendCoverageDigest() {
+  try {
+    expirePastShifts();
+    var shifts = sheetToObjects(getSheet('Shifts'));
+    var open = shifts.filter(function(s) { return s.Status === 'open'; });
+    if (open.length === 0) return; // nothing to nag about
+
+    // Sort by date ascending
+    open.sort(function(a, b) { return new Date(a.ShiftDate) - new Date(b.ShiftDate); });
+
+    var now = new Date();
+    var urgentLines = [];
+    var upcomingLines = [];
+
+    open.forEach(function(s) {
+      var dateStr = formatDateForEmail(s.ShiftDate);
+      var timeStr = formatTimeForEmail(s.StartTime) + ' - ' + formatTimeForEmail(s.EndTime);
+      var loc = s.Location ? ' @ ' + s.Location : '';
+      var who = (s.PostedBy === 'Open') ? 'Open shift' : s.PostedBy;
+      var line = '- ' + dateStr + ', ' + timeStr + loc + ' (' + who + ')';
+
+      var shiftDate = new Date(String(s.ShiftDate).substring(0, 10) + 'T00:00:00');
+      var hoursUntil = (shiftDate - now) / (1000 * 60 * 60);
+      if (hoursUntil <= 48) {
+        urgentLines.push(line);
+      } else {
+        upcomingLines.push(line);
+      }
+    });
+
+    var body = 'These shifts still need someone to cover them:\n\n';
+    if (urgentLines.length > 0) {
+      body += '** URGENT (within 48 hours) **\n' + urgentLines.join('\n') + '\n\n';
+    }
+    if (upcomingLines.length > 0) {
+      body += 'Upcoming:\n' + upcomingLines.join('\n') + '\n\n';
+    }
+    body += 'Grab one in the app:\nhttps://drtennisman.github.io/shift-coverage-app/';
+
+    var count = open.length;
+    var subject = count + ' shift' + (count === 1 ? '' : 's') + ' still need'
+      + (count === 1 ? 's' : '') + ' coverage'
+      + (urgentLines.length > 0 ? ' - some URGENT' : '');
+
+    // Send to all staff + manager
+    var emails = getStaffEmails();
+    var recipients = [];
+    for (var name in emails) {
+      if (emails[name] && recipients.indexOf(emails[name]) === -1) recipients.push(emails[name]);
+    }
+    var managerEmail = getManagerEmail();
+    if (managerEmail && recipients.indexOf(managerEmail) === -1) recipients.push(managerEmail);
+
+    if (recipients.length > 0) {
+      MailApp.sendEmail({ to: recipients.join(','), subject: subject, body: body });
+    }
+  } catch (e) {
+    // Never throw from a scheduled job
+  }
+}
+
+function setupCoverageReminder() {
+  // Remove any existing digest triggers so re-running doesn't stack them
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'sendCoverageDigest') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  // Schedule for ~8 AM daily
+  ScriptApp.newTrigger('sendCoverageDigest')
+    .timeBased()
+    .atHour(8)
+    .everyDays(1)
+    .create();
+  return 'Daily coverage reminder scheduled for 8 AM.';
 }
