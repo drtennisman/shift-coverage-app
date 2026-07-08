@@ -685,6 +685,20 @@
       <div id="adminPanel" style="display:none;">
         <!-- Backend version check -->
         <p id="versionStatus" style="text-align:center;font-size:12px;color:#999;margin-bottom:12px;"></p>
+
+        <!-- Message Everyone -->
+        <div class="card admin-section">
+          <h3>Message Everyone</h3>
+          <p style="font-size:13px;color:#777;margin-bottom:12px;">Email all staff right now.</p>
+          <div class="form-group">
+            <input type="text" id="broadcastSubject" placeholder="Subject (optional)">
+          </div>
+          <div class="form-group">
+            <textarea id="broadcastMessage" placeholder="Type your message to the team..."></textarea>
+          </div>
+          <button class="btn btn-primary" onclick="sendBroadcast()">Send to All Staff</button>
+        </div>
+
         <!-- Manage Staff -->
         <div class="card admin-section">
           <h3>Manage Staff</h3>
@@ -755,7 +769,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
-const APP_VERSION = 13; // must match VERSION in google-apps-script.js
+const APP_VERSION = 14; // must match VERSION in google-apps-script.js
 let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
@@ -1433,6 +1447,26 @@ function adminRemoveStaff(name) {
     const r = await postAPI({ action: 'removeStaff', name: name, pin: adminPIN });
     showToast(r.status === 'ok' ? 'Removed.' : (r.message || 'Could not remove staff.'));
     loadAdminData();
+  });
+}
+
+async function sendBroadcast() {
+  const subject = document.getElementById('broadcastSubject').value.trim();
+  const message = document.getElementById('broadcastMessage').value.trim();
+  if (!message) {
+    showToast('Type a message first.');
+    return;
+  }
+  showConfirm('Send this message to all staff?', async () => {
+    showToast('Sending...');
+    const r = await postAPI({ action: 'broadcastMessage', pin: adminPIN, subject: subject, message: message });
+    if (r.status !== 'ok') {
+      showToast(r.message || 'Could not send message.');
+    } else {
+      showToast('Message sent to all staff.');
+      document.getElementById('broadcastSubject').value = '';
+      document.getElementById('broadcastMessage').value = '';
+    }
   });
 }
 

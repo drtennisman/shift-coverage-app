@@ -29,7 +29,7 @@
 // ─── Version ────────────────────────────────────────────────
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 13;
+var VERSION = 14;
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -557,6 +557,32 @@ function doPost(e) {
           staffSheet.getRange(i, 2).setValue(0);
         }
       }
+      return jsonResponse({ status: 'ok' });
+    }
+
+    // ── Admin: Broadcast a message to all staff ──
+    if (action === 'broadcastMessage') {
+      if (String(data.pin) !== getAdminPIN()) {
+        return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
+      }
+      var msg = String(data.message || '').trim();
+      if (!msg) {
+        return jsonResponse({ status: 'error', message: 'Message is empty.' });
+      }
+      var subject = String(data.subject || '').trim() || 'Message from Shift Coverage';
+
+      var emails = getStaffEmails();
+      var recipients = [];
+      for (var name in emails) {
+        if (emails[name] && recipients.indexOf(emails[name]) === -1) recipients.push(emails[name]);
+      }
+      var mgr = getManagerEmail();
+      if (mgr && recipients.indexOf(mgr) === -1) recipients.push(mgr);
+
+      if (recipients.length === 0) {
+        return jsonResponse({ status: 'error', message: 'No staff emails on file.' });
+      }
+      MailApp.sendEmail({ to: recipients.join(','), subject: subject, body: msg });
       return jsonResponse({ status: 'ok' });
     }
 
