@@ -29,7 +29,7 @@
 // ─── Version ────────────────────────────────────────────────
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 14;
+var VERSION = 15;
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -586,6 +586,15 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
+    // ── Admin: Email all open shifts to staff right now ──
+    if (action === 'sendDigestNow') {
+      if (String(data.pin) !== getAdminPIN()) {
+        return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
+      }
+      var sent = sendCoverageDigest();
+      return jsonResponse({ status: 'ok', count: sent });
+    }
+
     // ── Admin: Add staff ──
     if (action === 'addStaff') {
       if (String(data.pin) !== getAdminPIN()) {
@@ -760,18 +769,21 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   }
 }
 
-// ─── Daily Coverage Reminder ────────────────────────────────
-// Run setupCoverageReminder() ONCE from the editor to schedule this
-// for 8 AM every day. sendCoverageDigest emails everyone the list of
-// shifts still needing coverage, with anything within 48 hours flagged
-// URGENT. Stays silent on days when nothing is open.
+// ─── Coverage Reminder Digest ───────────────────────────────
+// Run setupWeeklyReminder() ONCE from the editor to schedule this for
+// Sunday evening (~6 PM) each week. Also fired on demand by the admin
+// "Email Open Shifts Now" button. sendCoverageDigest emails everyone the
+// list of shifts still needing coverage, with anything within 48 hours
+// flagged URGENT. Stays silent (sends nothing) when nothing is open.
+// Returns the number of open shifts (0 = nothing sent) for the manual
+// button's feedback.
 
 function sendCoverageDigest() {
   try {
     expirePastShifts();
     var shifts = sheetToObjects(getSheet('Shifts'));
     var open = shifts.filter(function(s) { return s.Status === 'open'; });
-    if (open.length === 0) return; // nothing to nag about
+    if (open.length === 0) return 0; // nothing to nag about
 
     // Sort by date ascending
     open.sort(function(a, b) { return new Date(a.ShiftDate) - new Date(b.ShiftDate); });
@@ -822,12 +834,14 @@ function sendCoverageDigest() {
     if (recipients.length > 0) {
       MailApp.sendEmail({ to: recipients.join(','), subject: subject, body: body });
     }
+    return open.length;
   } catch (e) {
     // Never throw from a scheduled job
+    return 0;
   }
 }
 
-function setupCoverageReminder() {
+function setupWeeklyReminder() {
   // Remove any existing digest triggers so re-running doesn't stack them
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) {
@@ -835,11 +849,11 @@ function setupCoverageReminder() {
       ScriptApp.deleteTrigger(triggers[i]);
     }
   }
-  // Schedule for ~8 AM daily
+  // Schedule for Sunday ~6 PM each week
   ScriptApp.newTrigger('sendCoverageDigest')
     .timeBased()
-    .atHour(8)
-    .everyDays(1)
+    .onWeekDay(ScriptApp.WeekDay.SUNDAY)
+    .atHour(18)
     .create();
-  return 'Daily coverage reminder scheduled for 8 AM.';
+  return 'Weekly coverage reminder scheduled for Sunday ~6 PM.';
 }

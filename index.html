@@ -699,6 +699,13 @@
           <button class="btn btn-primary" onclick="sendBroadcast()">Send to All Staff</button>
         </div>
 
+        <!-- Email Open Shifts -->
+        <div class="card admin-section">
+          <h3>Email Open Shifts</h3>
+          <p style="font-size:13px;color:#777;margin-bottom:12px;">Email all staff every shift currently needing coverage.</p>
+          <button class="btn btn-primary" onclick="emailOpenShiftsNow()">Email Open Shifts Now</button>
+        </div>
+
         <!-- Manage Staff -->
         <div class="card admin-section">
           <h3>Manage Staff</h3>
@@ -769,7 +776,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
-const APP_VERSION = 14; // must match VERSION in google-apps-script.js
+const APP_VERSION = 15; // must match VERSION in google-apps-script.js
 let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
@@ -1466,6 +1473,22 @@ async function sendBroadcast() {
       showToast('Message sent to all staff.');
       document.getElementById('broadcastSubject').value = '';
       document.getElementById('broadcastMessage').value = '';
+    }
+  });
+}
+
+async function emailOpenShiftsNow() {
+  showConfirm('Email all staff every shift currently needing coverage?', async () => {
+    showToast('Sending...');
+    const r = await postAPI({ action: 'sendDigestNow', pin: adminPIN });
+    if (r.status !== 'ok') {
+      showToast(r.message || 'Could not send.');
+    } else if (r.count === 0) {
+      showToast('No open shifts right now — nothing sent.');
+    } else if (r.count == null) {
+      showToast('Open shifts emailed to staff.');
+    } else {
+      showToast('Emailed ' + r.count + ' open shift' + (r.count === 1 ? '' : 's') + ' to staff.');
     }
   });
 }
