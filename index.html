@@ -714,6 +714,13 @@
             <input type="text" id="adminNewStaff" placeholder="New staff name">
             <button class="btn btn-primary btn-small" onclick="adminAddStaff()">Add</button>
           </div>
+          <div class="admin-inline-form" style="margin-top:8px;">
+            <input type="email" id="adminNewStaffEmail" placeholder="Their email (for shift alerts)">
+          </div>
+          <p style="font-size:12px;color:#777;margin-top:6px;">
+            Without an email they can still post and claim shifts, but they
+            will not be emailed when someone needs coverage.
+          </p>
         </div>
 
         <!-- Reset Scores -->
@@ -1434,16 +1441,24 @@ async function loadAdminData() {
 
 async function adminAddStaff() {
   const input = document.getElementById('adminNewStaff');
+  const emailInput = document.getElementById('adminNewStaffEmail');
   const name = input.value.trim();
+  const email = emailInput ? emailInput.value.trim() : '';
   if (!name) return;
+  if (email && email.indexOf('@') === -1) {
+    showToast('That email does not look right.');
+    return;
+  }
 
   showToast('Adding staff...');
-  const r = await postAPI({ action: 'addStaff', name: name, pin: adminPIN });
+  const r = await postAPI({ action: 'addStaff', name: name, email: email, pin: adminPIN });
   if (r.status !== 'ok') {
     showToast(r.message || 'Could not add staff.');
   } else {
     input.value = '';
-    showToast('Staff added.');
+    if (emailInput) emailInput.value = '';
+    cachedStaff = [];          // force the name list to refetch
+    showToast(email ? 'Staff added.' : 'Added - no email, so no shift alerts.');
   }
   loadAdminData();
 }

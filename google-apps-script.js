@@ -601,8 +601,36 @@ function doPost(e) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
       }
 
+      var name = String(data.name || '').trim();
+      if (!name) {
+        return jsonResponse({ status: 'error', message: 'Give the person a name.' });
+      }
+
       var staffSheet = getSheet('Staff');
-      staffSheet.appendRow([data.name, 0, false]);
+      var rows = staffSheet.getDataRange().getValues();
+      var headers = rows[0];
+
+      // Already on the list? Adding again would give them two entries and
+      // split their score between them.
+      for (var i = 1; i < rows.length; i++) {
+        if (String(rows[i][0]).trim().toLowerCase() === name.toLowerCase()) {
+          return jsonResponse({ status: 'error', message: name + ' is already on the staff list.' });
+        }
+      }
+
+      // Build the row to match the tab's own columns rather than assuming an
+      // order, so Email lands in the Email column wherever it happens to be.
+      // Leaving it blank is what kept new staff off the shift-alert emails.
+      var row = [];
+      for (var j = 0; j < headers.length; j++) {
+        var head = String(headers[j]).trim().toLowerCase();
+        if (head === 'name') row.push(name);
+        else if (head === 'score') row.push(0);
+        else if (head === 'isadmin') row.push(false);
+        else if (head === 'email') row.push(String(data.email || '').trim());
+        else row.push('');
+      }
+      staffSheet.appendRow(row);
       return jsonResponse({ status: 'ok' });
     }
 
