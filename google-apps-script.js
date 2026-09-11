@@ -29,7 +29,7 @@
 // --- Version ------------------------------------------------
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 15;
+var VERSION = 16;
 
 // --- Helpers ------------------------------------------------
 
