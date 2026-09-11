@@ -1,13 +1,13 @@
 /**
- * Shift Coverage App — Google Apps Script
+ * Shift Coverage App -- Google Apps Script
  *
  * Deploy as a Web App:
  *   1. Create a new Google Sheet with these tabs:
- *        • Shifts   — Headers: ID | PostedBy | ShiftDate | StartTime | EndTime | Location | Notes | Status | ClaimedBy | PostedAt | ClaimedAt
- *        • History  — Headers: ID | PostedBy | CoveredBy | ShiftDate | CompletedAt
- *        • Staff    — Headers: Name | Score | IsAdmin | Email
- *        • Config   — Headers: Key | Value
- *        • Schedule — Headers: Day | Time | Location | Staff
+ *        - Shifts   -- Headers: ID | PostedBy | ShiftDate | StartTime | EndTime | Location | Notes | Status | ClaimedBy | PostedAt | ClaimedAt
+ *        - History  -- Headers: ID | PostedBy | CoveredBy | ShiftDate | CompletedAt
+ *        - Staff    -- Headers: Name | Score | IsAdmin | Email
+ *        - Config   -- Headers: Key | Value
+ *        - Schedule -- Headers: Day | Time | Location | Staff
  *   2. In the Staff tab, add your staff names (one per row) with Score = 0
  *      and each person's email in the Email column.
  *      Mark your admin row with IsAdmin = TRUE.
@@ -26,12 +26,12 @@
  *      so the app can confirm the new code is live.
  */
 
-// ─── Version ────────────────────────────────────────────────
+// --- Version ------------------------------------------------
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
 var VERSION = 15;
 
-// ─── Helpers ────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------
 
 function getSheet(name) {
   return SpreadsheetApp.getActiveSpreadsheet().getSheetByName(name);
@@ -90,7 +90,7 @@ function getAdminPIN() {
   return '1234';
 }
 
-// ─── Auto-cleanup: expire past open shifts ──────────────────
+// --- Auto-cleanup: expire past open shifts ------------------
 
 function expirePastShifts() {
   var sheet = getSheet('Shifts');
@@ -116,7 +116,7 @@ function expirePastShifts() {
   }
 }
 
-// ─── GET Endpoints ──────────────────────────────────────────
+// --- GET Endpoints ------------------------------------------
 
 function doGet(e) {
   try {
@@ -251,7 +251,7 @@ function doGet(e) {
             }
 
             if (claimed) {
-              // Follow the chain past the claimer — they may have re-posted
+              // Follow the chain past the claimer -- they may have re-posted
               var visited = {};
               visited[claimed.ID] = true;
               var res = followChain(postedForDate, String(claimed.ClaimedBy), visited);
@@ -273,7 +273,7 @@ function doGet(e) {
             }
           }
 
-          // Regular staff — follow the full coverage chain for this date
+          // Regular staff -- follow the full coverage chain for this date
           var res = followChain(postedForDate, tmpl.staff, {});
 
           if (res.openPost) {
@@ -328,7 +328,7 @@ function doGet(e) {
   }
 }
 
-// ─── POST Endpoints ─────────────────────────────────────────
+// --- POST Endpoints -----------------------------------------
 
 function doPost(e) {
   // Serialize all writes so two people acting at once can't corrupt
@@ -337,19 +337,19 @@ function doPost(e) {
   try {
     lock.waitLock(10000);
   } catch (lockErr) {
-    return jsonResponse({ status: 'error', message: 'Server busy — please try again.' });
+    return jsonResponse({ status: 'error', message: 'Server busy \u2014 please try again.' });
   }
   try {
     var data = JSON.parse(e.postData.contents);
     var action = data.action;
 
-    // ── Post a new shift ──
+    // -- Post a new shift --
     if (action === 'postShift') {
       var sheet = getSheet('Shifts');
 
       // Reject duplicates: same person, same date, same start time,
       // still active. (Bryleigh once posted the same shift twice and it
-      // got covered twice — double-counting both people's scores.)
+      // got covered twice -- double-counting both people's scores.)
       var existing = sheetToObjects(sheet);
       for (var i = 0; i < existing.length; i++) {
         var s = existing[i];
@@ -359,7 +359,7 @@ function doPost(e) {
             (s.Status === 'open' || s.Status === 'claimed')) {
           var msg = s.Status === 'open'
             ? 'This shift is already on the board.'
-            : 'This shift was already posted — ' + s.ClaimedBy + ' is covering it.';
+            : 'This shift was already posted \u2014 ' + s.ClaimedBy + ' is covering it.';
           return jsonResponse({ status: 'error', message: msg });
         }
       }
@@ -385,7 +385,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok', id: id });
     }
 
-    // ── Claim a shift ──
+    // -- Claim a shift --
     if (action === 'claimShift') {
       var sheet = getSheet('Shifts');
       var row = findRowByID(sheet, data.id);
@@ -407,7 +407,7 @@ function doPost(e) {
       // Coverer gets +1 (poster already got -1 when they posted)
       updateScore(data.claimedBy, 1);
 
-      // Log to history — but not self-covers ("I'll Work It"), which
+      // Log to history -- but not self-covers ("I'll Work It"), which
       // would read as "X covered X's shift" and just net out to zero
       var isSelfCover = String(postedBy) === String(data.claimedBy);
       if (!isSelfCover) {
@@ -434,7 +434,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // ── Claim an open (unfilled) shift from the schedule ──
+    // -- Claim an open (unfilled) shift from the schedule --
     if (action === 'claimOpenShift') {
       var sheet = getSheet('Shifts');
 
@@ -498,7 +498,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok', id: id });
     }
 
-    // ── Cancel own shift (before claimed) ──
+    // -- Cancel own shift (before claimed) --
     if (action === 'cancelShift') {
       var sheet = getSheet('Shifts');
       var row = findRowByID(sheet, data.id);
@@ -517,7 +517,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // ── Admin: Delete a shift ──
+    // -- Admin: Delete a shift --
     if (action === 'deleteShift') {
       if (String(data.pin) !== getAdminPIN()) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
@@ -544,7 +544,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // ── Admin: Reset all scores ──
+    // -- Admin: Reset all scores --
     if (action === 'resetScores') {
       if (String(data.pin) !== getAdminPIN()) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
@@ -560,7 +560,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // ── Admin: Broadcast a message to all staff ──
+    // -- Admin: Broadcast a message to all staff --
     if (action === 'broadcastMessage') {
       if (String(data.pin) !== getAdminPIN()) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
@@ -586,7 +586,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // ── Admin: Email all open shifts to staff right now ──
+    // -- Admin: Email all open shifts to staff right now --
     if (action === 'sendDigestNow') {
       if (String(data.pin) !== getAdminPIN()) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
@@ -595,7 +595,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok', count: sent });
     }
 
-    // ── Admin: Add staff ──
+    // -- Admin: Add staff --
     if (action === 'addStaff') {
       if (String(data.pin) !== getAdminPIN()) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
@@ -634,7 +634,7 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
-    // ── Admin: Remove staff ──
+    // -- Admin: Remove staff --
     if (action === 'removeStaff') {
       if (String(data.pin) !== getAdminPIN()) {
         return jsonResponse({ status: 'error', message: 'Invalid admin PIN.' });
@@ -660,7 +660,7 @@ function doPost(e) {
   }
 }
 
-// ─── Score Helper ───────────────────────────────────────────
+// --- Score Helper -------------------------------------------
 
 function updateScore(name, delta) {
   var staffSheet = getSheet('Staff');
@@ -674,7 +674,7 @@ function updateScore(name, delta) {
   }
 }
 
-// ─── Email Helpers ─────────────────────────────────────────
+// --- Email Helpers -----------------------------------------
 
 function getManagerEmail() {
   var config = getSheet('Config');
@@ -797,7 +797,7 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   }
 }
 
-// ─── Coverage Reminder Digest ───────────────────────────────
+// --- Coverage Reminder Digest -------------------------------
 // Run setupWeeklyReminder() ONCE from the editor to schedule this for
 // Sunday evening (~6 PM) each week. Also fired on demand by the admin
 // "Email Open Shifts Now" button. sendCoverageDigest emails everyone the
