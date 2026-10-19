@@ -165,7 +165,29 @@
     .shift-card .shift-actions {
       margin-top: 12px;
       display: flex;
+      flex-wrap: wrap;
       gap: 8px;
+    }
+    .btn-text-shift {
+      background: transparent;
+      color: #052d54;
+      border: 2px solid #052d54;
+    }
+    /* A card opened from a texted link: ring it so it's obvious which one. */
+    .shift-card.shift-highlight {
+      outline: 3px solid #28a745;
+      outline-offset: 2px;
+    }
+    .header .switch-link {
+      display: block;
+      margin: 6px auto 0;
+      padding: 2px 6px;
+      background: none;
+      border: none;
+      color: rgba(255,255,255,0.65);
+      font-size: 11px;
+      text-decoration: underline;
+      cursor: pointer;
     }
     .badge-urgent {
       display: inline-block;
@@ -560,6 +582,7 @@
     <img src="icon-192.png" alt="ICC" style="width:36px;height:36px;margin-bottom:4px;border-radius:6px;">
     <h1>Shift Coverage</h1>
     <div class="user-badge" id="headerUser"></div>
+    <button class="switch-link" onclick="switchUser()">Not you? Switch name</button>
     <button class="refresh-btn" onclick="refreshCurrentScreen()" title="Refresh">
       <svg viewBox="0 0 24 24"><path d="M17.65 6.35A7.96 7.96 0 0012 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0112 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
     </button>
@@ -789,11 +812,16 @@ let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
 let adminPIN = '';
 let cachedStaff = [];
+let boardShiftsById = {};
+// A shift texted to someone arrives as ?shift=<id>. Digits only, so nothing odd
+// from the address bar ever reaches the page.
+let pendingShiftId = (new URLSearchParams(location.search).get('shift') || '').replace(/\D/g, '');
 
 // ─── Init ─────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   if (API_URL && currentUser) {
     enterApp();
+    validateCurrentUser();
   } else if (API_URL) {
     // Have URL but no user — fetch staff and show name picker
     document.getElementById('setupUrl').value = API_URL;
@@ -897,6 +925,43 @@ async function fetchStaffForSetup() {
   } catch (e) {
     // Silently fail — user can re-enter URL
   }
+}
+
+// The saved name is the key that ties scores, shifts and history together. If it
+// stops matching the roster (a name was corrected, or an old "JC"), posts and
+// claims would silently file under a name nobody has -- so send the person back
+// to the name picker instead. Only acts on a clear answer: a failed or empty
+// response never signs anyone out.
+async function validateCurrentUser() {
+  try {
+    const resp = await fetchAPI('getStaff');
+    if (resp.status === 'ok' && resp.staff && resp.staff.length
+        && resp.staff.indexOf(currentUser) === -1) {
+      resetToNamePicker('Your name has changed on the staff list. Please pick it again.');
+    }
+  } catch (e) {
+    // Offline or backend hiccup: leave them where they are.
+  }
+}
+
+function switchUser() {
+  showConfirm('Switch to a different name on this phone?', () => resetToNamePicker(''));
+}
+
+function resetToNamePicker(notice) {
+  localStorage.removeItem('shiftCoverageUser');
+  currentUser = '';
+  adminVerified = false;
+  adminPIN = '';
+  document.getElementById('appHeader').style.display = 'none';
+  document.getElementById('bottomNav').style.display = 'none';
+  document.getElementById('setupUrl').value = API_URL;
+  document.getElementById('setupNameGroup').style.display = 'none';
+  document.getElementById('setupBtn').textContent = 'Get Started';
+  document.getElementById('setupError').style.display = 'none';
+  showScreen('setupScreen');
+  if (notice) showSetupError(notice);
+  fetchStaffForSetup();
 }
 
 function enterApp() {
@@ -1108,12 +1173,15 @@ async function loadBoard() {
     if (resp.status !== 'ok') throw new Error(resp.message);
 
     const shifts = resp.shifts || [];
+    boardShiftsById = {};
+    shifts.forEach(s => { boardShiftsById[String(s.ID)] = s; });
     if (shifts.length === 0) {
       container.innerHTML = `
         <div class="empty-state">
           <div class="empty-icon">&#9989;</div>
           <p>No shifts need coverage right now.</p>
         </div>`;
+      focusPendingShift();
       return;
     }
 
@@ -1131,6 +1199,7 @@ async function loadBoard() {
 
       const card = document.createElement('div');
       card.className = 'card shift-card';
+      card.setAttribute('data-id', String(shift.ID));
       card.innerHTML = `
         <div class="shift-date">
           ${dateStr}
@@ -1146,13 +1215,63 @@ async function loadBoard() {
             ? '<button class="btn btn-cancel-shift btn-small" onclick="cancelShift(\'' + shift.ID + '\')">Cancel Post</button><button class="btn btn-claim btn-small" onclick="claimShift(\'' + shift.ID + '\', \'' + escapeHtml(shift.PostedBy) + '\')">I\'ll Work It</button>'
             : '<button class="btn btn-claim btn-small" onclick="claimShift(\'' + shift.ID + '\', \'' + escapeHtml(shift.PostedBy) + '\')">Cover This Shift</button>'
           }
+          <button class="btn btn-text-shift btn-small" onclick="textShift('${String(shift.ID).replace(/\D/g, '')}')">Text it</button>
         </div>
       `;
       container.appendChild(card);
     });
 
+    focusPendingShift();
+
   } catch (err) {
     container.innerHTML = '<div class="empty-state"><p>Could not load shifts. Pull to refresh.</p></div>';
+  }
+}
+
+// Opens the Board on the shift a texted link points at. If that shift has since
+// been covered or cancelled, say so rather than leaving them staring at a list.
+function focusPendingShift() {
+  if (!pendingShiftId) return;
+  const id = pendingShiftId;
+  pendingShiftId = '';
+  if (window.history && history.replaceState) history.replaceState(null, '', location.pathname);
+
+  const card = document.querySelector('#shiftsList [data-id="' + id + '"]');
+  if (card) {
+    card.classList.add('shift-highlight');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    showToast('That shift has already been covered or removed.');
+  }
+}
+
+// Builds a ready-to-send text for one shift and hands it to the phone's share
+// sheet (Messages, GroupMe, WhatsApp...). No texting service and no cost: it goes
+// out from the sender's own phone. On a computer with no share sheet, the message
+// is copied so it can be pasted into a text.
+async function textShift(id) {
+  const s = boardShiftsById[String(id)];
+  if (!s) return;
+  const isOwn = s.PostedBy === currentUser;
+  const when = formatDate(s.ShiftDate) + ', ' + formatTime(s.StartTime) + ' – ' + formatTime(s.EndTime);
+  const where = s.Location ? ' (' + s.Location + ')' : '';
+  const link = location.origin + location.pathname + '?shift=' + encodeURIComponent(String(s.ID));
+  const text = (isOwn ? 'I need someone to cover my shift: ' : s.PostedBy + ' needs someone to cover a shift: ')
+    + when + where + '. Grab it here: ' + link;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ text: text });
+      return;
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;   // they closed the share sheet
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('Message copied — paste it into a text.');
+  } catch (e) {
+    window.prompt('Copy this message and paste it into a text:', text);
   }
 }
 
