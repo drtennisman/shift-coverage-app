@@ -446,6 +446,75 @@ function doPost(e) {
       return jsonResponse({ status: 'ok' });
     }
 
+    // -- Admin: put a different person on one shift, for one date --
+    // Scores count it like a normal cover: the person taken off -1, the
+    // person put on +1. If the shift is already posted as needing cover,
+    // the new person simply claims that post (its poster already got -1).
+    if (action === 'reassignShift') {
+      if (String(data.pin) !== getAdminPIN()) {
+        return jsonResponse({ status: 'error', message: 'Incorrect admin PIN.' });
+      }
+      var fromName = String(data.fromName || '').trim();
+      var toName = String(data.toName || '').trim();
+      var rDate = String(data.shiftDate || '').substring(0, 10);
+      var rStart = String(data.startTime || '').trim();
+      var rEnd = String(data.endTime || '').trim();
+      var rLoc = String(data.location || '').trim();
+      if (!fromName || !toName || !rDate) {
+        return jsonResponse({ status: 'error', message: 'Missing shift details.' });
+      }
+      if (fromName === toName) {
+        return jsonResponse({ status: 'error', message: toName + ' already has this shift.' });
+      }
+      var span = clockSpan_(rStart, rEnd);
+      if (!span) {
+        return jsonResponse({ status: 'error', message: 'Could not read the shift times.' });
+      }
+      var onStaff = sheetToObjects(getSheet('Staff')).some(function(st) {
+        return String(st.Name).trim() === toName;
+      });
+      if (!onStaff) {
+        return jsonResponse({ status: 'error', message: toName + ' is not on the staff list.' });
+      }
+
+      var rSheet = getSheet('Shifts');
+      var rRows = sheetToObjects(rSheet);
+      var openPost = null;
+      for (var ri = 0; ri < rRows.length; ri++) {
+        var rr = rRows[ri];
+        if (String(rr.PostedBy) !== fromName) continue;
+        if (String(rr.ShiftDate).substring(0, 10) !== rDate) continue;
+        if (rr.Status !== 'open') continue;
+        var rs = clockSpan_(rr.StartTime, rr.EndTime);
+        if (rs && Math.min(rs.end, span.end) - Math.max(rs.start, span.start) <= 0) continue;
+        openPost = rr;
+        break;
+      }
+
+      var nowIso = new Date().toISOString();
+      var recordId;
+      if (openPost) {
+        var prow = findRowByID(rSheet, openPost.ID);
+        if (prow === -1) return jsonResponse({ status: 'error', message: 'Shift not found.' });
+        rSheet.getRange(prow, 8).setValue('claimed');
+        rSheet.getRange(prow, 9).setValue(toName);
+        rSheet.getRange(prow, 11).setValue(nowIso);
+        updateScore(toName, 1);
+        recordId = String(openPost.ID);
+      } else {
+        recordId = String(Date.now());
+        rSheet.appendRow([recordId, fromName, rDate, rStart, rEnd, rLoc,
+                          'Changed by admin', 'claimed', toName, nowIso, nowIso]);
+        updateScore(fromName, -1);
+        updateScore(toName, 1);
+      }
+      getSheet('History').appendRow([recordId, fromName, toName, rDate, nowIso]);
+
+      notifyPoster_ShiftClaimed(fromName, toName, rDate, rStart, rEnd);
+      notifyReassigned_(toName, fromName, rDate, rStart, rEnd, rLoc);
+      return jsonResponse({ status: 'ok', claimedExistingPost: !!openPost });
+    }
+
     // -- Claim an open (unfilled) shift from the schedule --
     if (action === 'claimOpenShift') {
       var sheet = getSheet('Shifts');
@@ -829,6 +898,27 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
         body: body
       });
     }
+  } catch (e) {
+    // Don't fail the main action if email fails
+  }
+}
+
+// Tells the person an admin put on a shift that it's theirs now.
+function notifyReassigned_(toName, fromName, shiftDate, startTime, endTime, location) {
+  try {
+    var to = getStaffEmails()[toName];
+    if (!to) return;
+    var dateStr = formatDateForEmail(shiftDate);
+    var timeStr = formatTimeForEmail(startTime) + ' - ' + formatTimeForEmail(endTime);
+    MailApp.sendEmail({
+      to: to,
+      subject: 'You\'re on the schedule - ' + dateStr,
+      body: 'You have been put on ' + fromName + '\'s shift:\n\n'
+        + 'Date: ' + dateStr + '\n'
+        + 'Time: ' + timeStr + (location ? ' at ' + location : '') + '\n\n'
+        + 'It shows on the schedule in the Shift Coverage app:\n'
+        + 'https://drtennisman.github.io/shift-coverage-app/'
+    });
   } catch (e) {
     // Don't fail the main action if email fails
   }

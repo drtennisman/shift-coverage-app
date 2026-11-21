@@ -334,7 +334,9 @@
     .schedule-shift-time {
       font-weight: 600;
       color: #1a1a1a;
+      white-space: nowrap;
     }
+    .schedule-shift-info { flex-shrink: 0; margin-right: 8px; }
     .schedule-shift-location {
       font-size: 12px;
       color: #777;
@@ -380,6 +382,9 @@
       margin-top: 4px;
     }
     .btn-cover:active { opacity: 0.7; }
+    .btn-cover + .btn-cover { margin-left: 4px; }
+    #reassignModal select, #reassignModal input { width: 100%; }
+    #reassignModal .form-group { text-align: left; margin-top: 12px; }
     .schedule-original {
       font-size: 11px;
       color: #999;
@@ -807,6 +812,26 @@
   <div class="toast" id="toast"></div>
 
   <!-- ─── Confirmation Modal ──────────────────────── -->
+  <!-- Admin: change who works one shift -->
+  <div class="modal-overlay" id="reassignModal">
+    <div class="modal-box">
+      <p id="reassignInfo" style="white-space:pre-line;"></p>
+      <div class="form-group">
+        <label for="reassignTo">Who's working it instead?</label>
+        <select id="reassignTo" onchange="updateReassignNote()"></select>
+      </div>
+      <div class="form-group" id="reassignPinGroup">
+        <label for="reassignPin">Admin PIN</label>
+        <input type="password" inputmode="numeric" id="reassignPin" autocomplete="off">
+      </div>
+      <p id="reassignNote" style="font-size:12px;color:#777;margin-top:10px;"></p>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-small" onclick="closeReassign()">Cancel</button>
+        <button class="btn btn-primary btn-small" id="reassignBtn" onclick="submitReassign()">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="confirmModal">
     <div class="modal-box">
       <p id="confirmMessage" style="white-space:pre-line;"></p>
@@ -1059,10 +1084,13 @@ async function renderSchedule() {
 
           // One tap to ask for coverage: on your own shift, or on anyone's if
           // you're an admin. Not on shifts already up for grabs.
-          if (canAskCover(shift)) {
+          const cover = canAskCover(shift), change = canChangePerson(shift);
+          if (cover || change) {
             const idx = scheduleShifts.push({ date: day.date, day: day.day, time: shift.time,
                                               location: shift.location, staff: shift.staff }) - 1;
-            staffHtml += '<br><button class="btn-cover" onclick="askCover(' + idx + ')">Get covered</button>';
+            staffHtml += '<br>';
+            if (cover) staffHtml += '<button class="btn-cover" onclick="askCover(' + idx + ')">Get covered</button>';
+            if (change) staffHtml += '<button class="btn-cover" onclick="openReassign(' + idx + ')">Change person</button>';
           }
 
           inner += `
@@ -1151,6 +1179,88 @@ function askCover(idx) {
       updateBoardBadge();
     }
   );
+}
+
+// --- Admin: change who works one shift (one date) ----------------------
+let reassignShift = null;
+
+function canChangePerson(shift) {
+  if (isAdminUser !== true) return false;
+  if (shift.status !== 'normal' && shift.status !== 'covered' && shift.status !== 'needs_coverage') return false;
+  return !!shift.staff && shift.staff.toLowerCase() !== 'open';
+}
+
+async function openReassign(idx) {
+  const sh = scheduleShifts[idx];
+  if (!sh) return;
+  reassignShift = sh;
+  if (!cachedStaff.length) {
+    try {
+      const r = await fetchAPI('getStaff');
+      if (r.status === 'ok' && r.staff) cachedStaff = r.staff;
+    } catch (e) {}
+  }
+  const sel = document.getElementById('reassignTo');
+  sel.innerHTML = '<option value="">Choose a name...</option>';
+  cachedStaff.filter(n => n !== sh.staff).forEach(n => {
+    const o = document.createElement('option');
+    o.value = n; o.textContent = n; sel.appendChild(o);
+  });
+  document.getElementById('reassignInfo').textContent = 'Change who works this shift?\n\n'
+    + formatDate(sh.date) + '\n' + sh.time + (sh.location ? ' · ' + sh.location : '')
+    + '\nNow: ' + sh.staff;
+  document.getElementById('reassignPin').value = '';
+  document.getElementById('reassignPinGroup').style.display = adminPIN ? 'none' : 'block';
+  updateReassignNote();
+  document.getElementById('reassignModal').classList.add('show');
+}
+
+function updateReassignNote() {
+  const to = document.getElementById('reassignTo').value;
+  const sh = reassignShift;
+  document.getElementById('reassignNote').textContent = (sh && to)
+    ? 'Counts like a normal cover: ' + sh.staff + ' -1, ' + to + ' +1. Both get an email. Just this date; the regular schedule doesn\'t change.'
+    : 'Just this date; the regular schedule doesn\'t change.';
+}
+
+function closeReassign() {
+  document.getElementById('reassignModal').classList.remove('show');
+  reassignShift = null;
+}
+
+async function submitReassign() {
+  const sh = reassignShift;
+  if (!sh) return;
+  const to = document.getElementById('reassignTo').value;
+  if (!to) { showToast('Choose who is working it.'); return; }
+  const pin = adminPIN || document.getElementById('reassignPin').value.trim();
+  if (!pin) { showToast('Enter the admin PIN.'); return; }
+  const parts = sh.time.split(/\s*[–—-]\s*/);
+  const start = to24h(parts[0]), end = to24h(parts[1]);
+  if (!start || !end) { showToast('Could not read that shift\'s times.'); return; }
+
+  const btn = document.getElementById('reassignBtn');
+  btn.disabled = true;
+  showToast('Saving...');
+  let r;
+  try {
+    r = await postAPI({ action: 'reassignShift', pin: pin, fromName: sh.staff, toName: to,
+                        shiftDate: sh.date, startTime: start, endTime: end, location: sh.location || '' });
+  } catch (e) {
+    r = { status: 'error', message: 'Could not reach the server. Try again.' };
+  }
+  btn.disabled = false;
+  if (r.status !== 'ok') {
+    // Keep the popup open so nothing is lost.
+    if (/PIN/i.test(r.message || '')) { adminPIN = ''; document.getElementById('reassignPinGroup').style.display = 'block'; }
+    showToast(r.message || 'Could not change the shift.');
+    return;
+  }
+  adminPIN = pin;   // remembered for the rest of this session
+  closeReassign();
+  showToast(to + ' is on the shift. Both have been emailed.');
+  renderSchedule();
+  updateBoardBadge();
 }
 
 async function claimOpenShift(date, time, location) {
