@@ -29,7 +29,7 @@
 // --- Version ------------------------------------------------
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 16;
+var VERSION = 17;
 
 // --- Helpers ------------------------------------------------
 
@@ -182,15 +182,27 @@ function doGet(e) {
       // posted their shift, the claimer may have re-posted it, and so on.
       // Returns who currently holds the shift, and their open post if they
       // are looking for coverage. `visited` prevents loops (e.g. self-covers).
-      function followChain(posted, startName, visited) {
+      // tmplTime ("8:00 AM - 3:00 PM") keeps a post on the shift it belongs to:
+      // someone with two shifts that day (Carson works 8:30-1 and 1-6 on
+      // Saturdays) posting one of them must not mark both. A post only joins
+      // a shift whose hours it overlaps. Partial posts (8-10 of an 8-3 shift)
+      // still overlap, and a post with unreadable times matches as before.
+      function followChain(posted, startName, visited, tmplTime) {
         var current = startName;
         var openPost = null;
+        var span = clockSpan_(tmplTime, '');
         for (var hop = 0; hop < 10; hop++) {
           var next = null;
           for (var i = 0; i < posted.length; i++) {
             var p = posted[i];
             if (visited[p.ID]) continue;
-            if (p.PostedBy === current) { next = p; break; }
+            if (p.PostedBy !== current) continue;
+            if (span) {
+              var ps = clockSpan_(p.StartTime, p.EndTime);
+              if (ps && Math.min(ps.end, span.end) - Math.max(ps.start, span.start) <= 0) continue;
+            }
+            next = p;
+            break;
           }
           if (!next) break;
           visited[next.ID] = true;
@@ -254,7 +266,7 @@ function doGet(e) {
               // Follow the chain past the claimer -- they may have re-posted
               var visited = {};
               visited[claimed.ID] = true;
-              var res = followChain(postedForDate, String(claimed.ClaimedBy), visited);
+              var res = followChain(postedForDate, String(claimed.ClaimedBy), visited, tmpl.time);
               return {
                 time: tmpl.time,
                 location: tmpl.location,
@@ -274,7 +286,7 @@ function doGet(e) {
           }
 
           // Regular staff -- follow the full coverage chain for this date
-          var res = followChain(postedForDate, tmpl.staff, {});
+          var res = followChain(postedForDate, tmpl.staff, {}, tmpl.time);
 
           if (res.openPost) {
             var out = {
@@ -704,6 +716,31 @@ function getStaffEmails() {
     if (name && email) emails[name] = String(email).trim();
   }
   return emails;
+}
+
+// Minutes since midnight from "8:00", "13:00", "8:00 AM" or "1:00 PM".
+// null if it can't be read.
+function clockMinutes_(t) {
+  var m = String(t == null ? '' : t).trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp][Mm])?$/);
+  if (!m) return null;
+  var h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (m[3]) {
+    h = h % 12;
+    if (m[3].charAt(0).toUpperCase() === 'P') h += 12;
+  }
+  if (h > 23 || min > 59) return null;
+  return h * 60 + min;
+}
+
+// {start, end} in minutes, from a start and end, or from one string holding
+// both ("8:00 AM - 3:00 PM", with any dash). null unless both can be read.
+function clockSpan_(startStr, endStr) {
+  var a = String(startStr == null ? '' : startStr), b = String(endStr == null ? '' : endStr);
+  var parts = a.split(/\s*[\u2013\u2014-]\s*/);
+  if (parts.length >= 2) { a = parts[0]; if (!b) b = parts[1]; }
+  var s = clockMinutes_(a), e = clockMinutes_(b);
+  if (s === null || e === null || e <= s) return null;
+  return { start: s, end: e };
 }
 
 function formatTimeForEmail(timeStr) {

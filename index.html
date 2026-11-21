@@ -367,6 +367,19 @@
       margin-top: 4px;
     }
     .btn-claim-open:active { opacity: 0.8; }
+    .btn-cover {
+      display: inline-block;
+      background: #fff;
+      color: #052d54;
+      border: 1.5px solid #052d54;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-top: 4px;
+    }
+    .btn-cover:active { opacity: 0.7; }
     .schedule-original {
       font-size: 11px;
       color: #999;
@@ -796,7 +809,7 @@
   <!-- ─── Confirmation Modal ──────────────────────── -->
   <div class="modal-overlay" id="confirmModal">
     <div class="modal-box">
-      <p id="confirmMessage"></p>
+      <p id="confirmMessage" style="white-space:pre-line;"></p>
       <div class="modal-actions">
         <button class="btn btn-outline btn-small" onclick="closeModal()">Cancel</button>
         <button class="btn btn-danger btn-small" id="confirmBtn" onclick="">Confirm</button>
@@ -806,7 +819,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
-const APP_VERSION = 16; // must match VERSION in google-apps-script.js
+const APP_VERSION = 17; // must match VERSION in google-apps-script.js
 let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
@@ -896,6 +909,7 @@ async function handleSetup() {
   }
 
   currentUser = name;
+  isAdminUser = null;
   localStorage.setItem('shiftCoverageUser', name);
   enterApp();
 }
@@ -951,6 +965,7 @@ function switchUser() {
 function resetToNamePicker(notice) {
   localStorage.removeItem('shiftCoverageUser');
   currentUser = '';
+  isAdminUser = null;
   adminVerified = false;
   adminPIN = '';
   document.getElementById('appHeader').style.display = 'none';
@@ -1003,8 +1018,9 @@ async function renderSchedule() {
   container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
   try {
-    const resp = await fetchAPI('getSchedule');
+    const [resp] = await Promise.all([fetchAPI('getSchedule'), loadIsAdmin()]);
     if (resp.status !== 'ok') throw new Error(resp.message);
+    scheduleShifts = [];
 
     const schedule = resp.schedule || [];
     container.innerHTML = '';
@@ -1041,6 +1057,14 @@ async function renderSchedule() {
             staffHtml = escapeHtml(shift.staff);
           }
 
+          // One tap to ask for coverage: on your own shift, or on anyone's if
+          // you're an admin. Not on shifts already up for grabs.
+          if (canAskCover(shift)) {
+            const idx = scheduleShifts.push({ date: day.date, day: day.day, time: shift.time,
+                                              location: shift.location, staff: shift.staff }) - 1;
+            staffHtml += '<br><button class="btn-cover" onclick="askCover(' + idx + ')">Get covered</button>';
+          }
+
           inner += `
             <div class="schedule-shift">
               <div class="schedule-shift-info">
@@ -1059,6 +1083,74 @@ async function renderSchedule() {
   } catch (err) {
     container.innerHTML = '<div class="empty-state"><p>Could not load schedule. Pull to refresh.</p></div>';
   }
+}
+
+// --- One-tap "Get covered" from the schedule --------------------------
+let scheduleShifts = [];   // the shifts on screen that have a Get covered button
+let isAdminUser = null;    // null = not checked yet this session
+
+async function loadIsAdmin() {
+  if (isAdminUser !== null) return;
+  try {
+    const r = await fetchAPI('getScores');
+    const me = (r.scores || []).find(s => s.name === currentUser);
+    isAdminUser = !!(me && me.isAdmin);
+  } catch (e) {
+    isAdminUser = false;   // fail safe: just your own shifts
+  }
+}
+
+function canAskCover(shift) {
+  if (shift.status !== 'normal' && shift.status !== 'covered') return false;
+  if (!shift.staff || shift.staff.toLowerCase() === 'open') return false;
+  return shift.staff === currentUser || isAdminUser === true;
+}
+
+// "8:00 AM" -> "08:00" (the same format the Post form sends). '' if unreadable.
+function to24h(t) {
+  const m = String(t || '').trim().match(/^(\d{1,2}):(\d{2})\s*([AaPp])[Mm]$/);
+  if (!m) return '';
+  let h = parseInt(m[1], 10) % 12;
+  if (m[3].toUpperCase() === 'P') h += 12;
+  return (h < 10 ? '0' : '') + h + ':' + m[2];
+}
+
+function askCover(idx) {
+  const sh = scheduleShifts[idx];
+  if (!sh) return;
+  const parts = sh.time.split(/\s*[\u2013\u2014-]\s*/);
+  const start = to24h(parts[0]), end = to24h(parts[1]);
+  if (!start || !end) {
+    showToast('Could not read that shift\'s times. Use + Post a Shift on the Board.');
+    return;
+  }
+  const mine = sh.staff === currentUser;
+  const who = mine ? 'your' : sh.staff + '\'s';
+  showConfirm(
+    'Ask for coverage?\n\n' + formatDate(sh.date) + '\n' + sh.time
+      + (sh.location ? ' · ' + sh.location : '')
+      + (mine ? '' : '\nfor ' + sh.staff)
+      + '\n\nEveryone gets an email, and it counts -1 on ' + who + ' score.',
+    async () => {
+      showToast('Posting...');
+      const r = await postAPI({
+        action: 'postShift',
+        postedBy: sh.staff,
+        shiftDate: sh.date,
+        startTime: start,
+        endTime: end,
+        location: sh.location || '',
+        notes: ''
+      });
+      if (r.status !== 'ok') {
+        showToast(r.message || 'Could not post. Try again.');
+      } else {
+        showToast('Posted. Everyone has been emailed.');
+      }
+      renderSchedule();
+      updateBoardBadge();
+    }
+  );
 }
 
 async function claimOpenShift(date, time, location) {
