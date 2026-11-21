@@ -382,7 +382,14 @@
       margin-top: 4px;
     }
     .btn-cover:active { opacity: 0.7; }
-    .btn-cover + .btn-cover { margin-left: 4px; }
+    .shift-btns { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; margin-top: 4px; }
+    .shift-btns .btn-cover { margin-top: 0; }
+    .schedule-shift-staff.not-needed { color: #999; }
+    .schedule-shift-staff.not-needed s { font-weight: 500; }
+    .schedule-badge.not-needed { background: #eceff1; color: #607d8b; }
+    .schedule-posted-time { font-size: 12px; color: #dc3545; font-weight: 600; }
+    #hoursModal input, #pinModal input { width: 100%; }
+    #hoursModal .form-group, #pinModal .form-group { text-align: left; margin-top: 12px; }
     #reassignModal select, #reassignModal input { width: 100%; }
     #reassignModal .form-group { text-align: left; margin-top: 12px; }
     .schedule-original {
@@ -812,6 +819,45 @@
   <div class="toast" id="toast"></div>
 
   <!-- ─── Confirmation Modal ──────────────────────── -->
+  <!-- Change the hours on a posted shift -->
+  <div class="modal-overlay" id="hoursModal">
+    <div class="modal-box">
+      <p id="hoursInfo" style="white-space:pre-line;"></p>
+      <div class="form-group">
+        <label for="hoursStart">Start</label>
+        <input type="time" id="hoursStart">
+      </div>
+      <div class="form-group">
+        <label for="hoursEnd">End</label>
+        <input type="time" id="hoursEnd">
+      </div>
+      <div class="form-group" id="hoursPinGroup">
+        <label for="hoursPin">Admin PIN</label>
+        <input type="password" inputmode="numeric" id="hoursPin" autocomplete="off">
+      </div>
+      <p id="hoursNote" style="font-size:12px;color:#777;margin-top:10px;"></p>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-small" onclick="closeHours()">Cancel</button>
+        <button class="btn btn-primary btn-small" id="hoursBtn" onclick="submitHours()">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Asks for the admin PIN once per session -->
+  <div class="modal-overlay" id="pinModal">
+    <div class="modal-box">
+      <p id="pinInfo">Enter the admin PIN</p>
+      <div class="form-group">
+        <label for="pinInput">Admin PIN</label>
+        <input type="password" inputmode="numeric" id="pinInput" autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline btn-small" onclick="pinDone(null)">Cancel</button>
+        <button class="btn btn-primary btn-small" onclick="pinDone(document.getElementById('pinInput').value.trim())">OK</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Admin: change who works one shift -->
   <div class="modal-overlay" id="reassignModal">
     <div class="modal-box">
@@ -844,7 +890,7 @@
 
 <script>
 // ─── State ────────────────────────────────────────────
-const APP_VERSION = 17; // must match VERSION in google-apps-script.js
+const APP_VERSION = 18; // must match VERSION in google-apps-script.js
 let API_URL = localStorage.getItem('shiftCoverageUrl') || 'https://script.google.com/macros/s/AKfycbxkBFAEw8y02BJzlpZdB2rik27ZSoIq5C9ER3d80Dc3UXTwLOxSlSurnyWD1Nkgq6kIww/exec';
 let currentUser = localStorage.getItem('shiftCoverageUser') || '';
 let adminVerified = false;
@@ -1078,19 +1124,31 @@ async function renderSchedule() {
             staffClass += ' covered';
             staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge swap">Covering</span>';
             staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
+          } else if (shift.status === 'not_needed') {
+            staffClass += ' not-needed';
+            staffHtml = '<s>' + escapeHtml(shift.staff) + '</s> <span class="schedule-badge not-needed">Not needed</span>';
           } else {
             staffHtml = escapeHtml(shift.staff);
           }
 
           // One tap to ask for coverage: on your own shift, or on anyone's if
           // you're an admin. Not on shifts already up for grabs.
-          const cover = canAskCover(shift), change = canChangePerson(shift);
-          if (cover || change) {
+          const cover = canAskCover(shift), change = canChangePerson(shift),
+                notNeeded = canMarkNotNeeded(shift), hours = canEditHours(shift),
+                undo = isAdminUser === true && shift.status === 'not_needed' && shift.postId;
+          if (cover || change || notNeeded || hours || undo) {
             const idx = scheduleShifts.push({ date: day.date, day: day.day, time: shift.time,
-                                              location: shift.location, staff: shift.staff }) - 1;
-            staffHtml += '<br>';
+                                              location: shift.location, staff: shift.staff,
+                                              postId: shift.postId || '', postedBy: shift.postedBy || '',
+                                              postStart: shift.postStart || '', postEnd: shift.postEnd || '',
+                                              status: shift.status }) - 1;
+            staffHtml += '<div class="shift-btns">';
             if (cover) staffHtml += '<button class="btn-cover" onclick="askCover(' + idx + ')">Get covered</button>';
+            if (hours) staffHtml += '<button class="btn-cover" onclick="openHours(' + idx + ')">Edit hours</button>';
             if (change) staffHtml += '<button class="btn-cover" onclick="openReassign(' + idx + ')">Change person</button>';
+            if (notNeeded) staffHtml += '<button class="btn-cover" onclick="askNotNeeded(' + idx + ')">Not needed</button>';
+            if (undo) staffHtml += '<button class="btn-cover" onclick="askUndoNotNeeded(' + idx + ')">Undo</button>';
+            staffHtml += '</div>';
           }
 
           inner += `
@@ -1098,6 +1156,7 @@ async function renderSchedule() {
               <div class="schedule-shift-info">
                 <div class="schedule-shift-time">${escapeHtml(shift.time)}</div>
                 <div class="schedule-shift-location">${escapeHtml(shift.location)}</div>
+                ${shift.postedTime && shift.status !== 'not_needed' ? '<div class="schedule-posted-time">' + (shift.status === 'covered' ? 'Covering ' : 'Cover needed ') + escapeHtml(shift.postedTime) + '</div>' : ''}
               </div>
               <div class="${staffClass}">${staffHtml}</div>
             </div>`;
@@ -1179,6 +1238,165 @@ function askCover(idx) {
       updateBoardBadge();
     }
   );
+}
+
+// --- Admin PIN, asked once per session ---------------------------------
+let pinResolve = null;
+function askAdminPin(why) {
+  if (adminPIN) return Promise.resolve(adminPIN);
+  document.getElementById('pinInfo').textContent = why || 'Enter the admin PIN';
+  document.getElementById('pinInput').value = '';
+  document.getElementById('pinModal').classList.add('show');
+  setTimeout(() => document.getElementById('pinInput').focus(), 50);
+  return new Promise(res => { pinResolve = res; });
+}
+function pinDone(val) {
+  document.getElementById('pinModal').classList.remove('show');
+  const r = pinResolve; pinResolve = null;
+  if (r) r(val || null);
+}
+
+// --- Admin: a shift isn't needed this date ------------------------------
+function canMarkNotNeeded(shift) {
+  if (isAdminUser !== true) return false;
+  if (shift.status !== 'normal' && shift.status !== 'needs_coverage') return false;
+  return !!shift.staff && shift.staff.toLowerCase() !== 'open';
+}
+
+function askNotNeeded(idx) {
+  const sh = scheduleShifts[idx];
+  if (!sh) return;
+  const parts = sh.time.split(/\s*[–—-]\s*/);
+  const start = to24h(parts[0]), end = to24h(parts[1]);
+  if (!start || !end) { showToast('Could not read that shift\'s times.'); return; }
+  showConfirm(
+    'Mark this shift not needed?\n\n' + formatDate(sh.date) + '\n' + sh.time
+      + (sh.location ? ' · ' + sh.location : '') + '\n' + sh.staff
+      + '\n\nNobody is asked to cover it and no points change'
+      + (sh.status === 'needs_coverage' ? ' (it comes off the Board and ' + sh.staff + ' gets their point back)' : '')
+      + '. ' + sh.staff + ' gets an email.',
+    async () => {
+      const pin = await askAdminPin('Enter the admin PIN to mark it not needed');
+      if (!pin) return;
+      showToast('Saving...');
+      const r = await postAPI({ action: 'markNotNeeded', pin: pin, staffName: sh.staff, shiftDate: sh.date,
+                                startTime: start, endTime: end, location: sh.location || '' });
+      if (r.status !== 'ok') {
+        if (/PIN/i.test(r.message || '')) adminPIN = '';
+        showToast(r.message || 'Could not save. Try again.');
+        return;
+      }
+      adminPIN = pin;
+      showToast('Marked not needed. ' + sh.staff + ' has been emailed.');
+      renderSchedule();
+      updateBoardBadge();
+    }
+  );
+}
+
+function askUndoNotNeeded(idx) {
+  const sh = scheduleShifts[idx];
+  if (!sh || !sh.postId) return;
+  showConfirm('Put this shift back?\n\n' + formatDate(sh.date) + '\n' + sh.time + '\n' + sh.staff
+      + '\n\nNo email is sent; let ' + sh.staff + ' know.',
+    async () => {
+      const pin = await askAdminPin('Enter the admin PIN to put the shift back');
+      if (!pin) return;
+      const r = await postAPI({ action: 'undoNotNeeded', pin: pin, id: sh.postId });
+      if (r.status !== 'ok') {
+        if (/PIN/i.test(r.message || '')) adminPIN = '';
+        showToast(r.message || 'Could not undo. Try again.');
+        return;
+      }
+      adminPIN = pin;
+      showToast(r.backOnBoard ? 'Back on the Board as needing cover.' : 'Shift is back to normal.');
+      renderSchedule();
+      updateBoardBadge();
+    });
+}
+
+// --- Change the hours on a posted shift ---------------------------------
+let hoursTarget = null;   // { id, poster, start, end, label, covered }
+
+function canEditHours(shift) {
+  if (!shift.postId) return false;
+  if (shift.status !== 'needs_coverage' && shift.status !== 'covered') return false;
+  return isAdminUser === true || shift.postedBy === currentUser;
+}
+
+function openHours(idx) {
+  const sh = scheduleShifts[idx];
+  if (!sh || !sh.postId) return;
+  const reg = sh.time.split(/\s*[\u2013\u2014-]\s*/);
+  showHoursModal({ id: sh.postId, poster: sh.postedBy,
+                   start: sh.postStart || to24h(reg[0]), end: sh.postEnd || to24h(reg[1]),
+                   label: formatDate(sh.date) + (sh.location ? ' · ' + sh.location : ''),
+                   covered: sh.status === 'covered', coverer: sh.status === 'covered' ? sh.staff : '' });
+}
+
+function openHoursFromBoard(id) {
+  const s = boardShiftsById[String(id)];
+  if (!s) return;
+  showHoursModal({ id: String(s.ID), poster: s.PostedBy, start: hhmm(s.StartTime), end: hhmm(s.EndTime),
+                   label: formatDate(s.ShiftDate) + (s.Location ? ' · ' + s.Location : ''),
+                   covered: false, coverer: '' });
+}
+
+// "8:00" -> "08:00" for a time input
+function hhmm(t) {
+  const m = String(t || '').match(/^(\d{1,2}):(\d{2})/);
+  return m ? (m[1].length === 1 ? '0' : '') + m[1] + ':' + m[2] : '';
+}
+
+function showHoursModal(t) {
+  hoursTarget = t;
+  document.getElementById('hoursInfo').textContent = 'Change the hours?\n\n' + t.label + '\nPosted by ' + t.poster;
+  document.getElementById('hoursStart').value = t.start || '';
+  document.getElementById('hoursEnd').value = t.end || '';
+  document.getElementById('hoursPin').value = '';
+  const needPin = t.poster !== currentUser && !adminPIN;
+  document.getElementById('hoursPinGroup').style.display = needPin ? 'block' : 'none';
+  document.getElementById('hoursNote').textContent = t.covered
+    ? t.coverer + ' is covering it, so ' + t.poster + ' and ' + t.coverer + ' both get an email with the new hours.'
+    : 'It stays on the Board with the new hours. No new email goes out.';
+  document.getElementById('hoursModal').classList.add('show');
+}
+
+function closeHours() {
+  document.getElementById('hoursModal').classList.remove('show');
+  hoursTarget = null;
+}
+
+async function submitHours() {
+  const t = hoursTarget;
+  if (!t) return;
+  const start = document.getElementById('hoursStart').value;
+  const end = document.getElementById('hoursEnd').value;
+  if (!start || !end) { showToast('Fill in both times.'); return; }
+  if (end <= start) { showToast('The end time must be after the start time.'); return; }
+  const mine = t.poster === currentUser;
+  const pin = mine ? '' : (adminPIN || document.getElementById('hoursPin').value.trim());
+  if (!mine && !pin) { showToast('Enter the admin PIN.'); return; }
+  const btn = document.getElementById('hoursBtn');
+  btn.disabled = true;
+  showToast('Saving...');
+  let r;
+  try {
+    r = await postAPI({ action: 'editShiftHours', id: t.id, by: currentUser, pin: pin, startTime: start, endTime: end });
+  } catch (e) {
+    r = { status: 'error', message: 'Could not reach the server. Try again.' };
+  }
+  btn.disabled = false;
+  if (r.status !== 'ok') {
+    if (/PIN|admin/i.test(r.message || '') && !mine) { adminPIN = ''; document.getElementById('hoursPinGroup').style.display = 'block'; }
+    showToast(r.message || 'Could not save. Try again.');
+    return;
+  }
+  if (!mine) adminPIN = pin;
+  closeHours();
+  showToast(r.emailed ? 'Hours updated. Both have been emailed.' : 'Hours updated.');
+  renderSchedule();
+  loadBoard();
 }
 
 // --- Admin: change who works one shift (one date) ----------------------
@@ -1371,7 +1589,7 @@ async function loadBoard() {
   container.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
 
   try {
-    const resp = await fetchAPI('getShifts');
+    const [resp] = await Promise.all([fetchAPI('getShifts'), loadIsAdmin()]);
     if (resp.status !== 'ok') throw new Error(resp.message);
 
     const shifts = resp.shifts || [];
@@ -1418,6 +1636,7 @@ async function loadBoard() {
             : '<button class="btn btn-claim btn-small" onclick="claimShift(\'' + shift.ID + '\', \'' + escapeHtml(shift.PostedBy) + '\')">Cover This Shift</button>'
           }
           <button class="btn btn-text-shift btn-small" onclick="textShift('${String(shift.ID).replace(/\D/g, '')}')">Text it</button>
+          ${(isOwn || isAdminUser === true) ? '<button class="btn btn-text-shift btn-small" onclick="openHoursFromBoard(\'' + String(shift.ID).replace(/\D/g, '') + '\')">Edit hours</button>' : ''}
         </div>
       `;
       container.appendChild(card);

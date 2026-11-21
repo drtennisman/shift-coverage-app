@@ -29,7 +29,7 @@
 // --- Version ------------------------------------------------
 // Bump this with every deploy. The app compares it against its own
 // version and warns the admin if the deployed backend is stale.
-var VERSION = 17;
+var VERSION = 18;
 
 // --- Helpers ------------------------------------------------
 
@@ -191,6 +191,7 @@ function doGet(e) {
         var current = startName;
         var openPost = null;
         var span = clockSpan_(tmplTime, '');
+        var lastPost = null, notNeeded = null;
         for (var hop = 0; hop < 10; hop++) {
           var next = null;
           for (var i = 0; i < posted.length; i++) {
@@ -206,10 +207,27 @@ function doGet(e) {
           }
           if (!next) break;
           visited[next.ID] = true;
+          if (next.Status === 'not_needed') { notNeeded = next; break; }
+          lastPost = next;
           if (next.Status === 'open') { openPost = next; break; }
           current = String(next.ClaimedBy);
         }
-        return { staff: current, openPost: openPost };
+        return { staff: current, openPost: openPost, lastPost: lastPost, notNeeded: notNeeded };
+      }
+
+      // Adds the posted hours (when they differ from the regular shift) and
+      // the post's ID and poster, so the app can offer Edit hours / Undo.
+      function withPost(out, post, tmplTime) {
+        if (!post) return out;
+        out.postId = String(post.ID);
+        out.postedBy = String(post.PostedBy);
+        var ps = clockSpan_(post.StartTime, post.EndTime), ts = clockSpan_(tmplTime, '');
+        if (ps) {
+          out.postStart = minutesTo24h_(ps.start);
+          out.postEnd = minutesTo24h_(ps.end);
+          if (!ts || ps.start !== ts.start || ps.end !== ts.end) out.postedTime = minutesToLabel12_(ps.start) + ' \u2013 ' + minutesToLabel12_(ps.end);
+        }
+        return out;
       }
 
       // Group template shifts by day name
@@ -240,7 +258,7 @@ function doGet(e) {
           var sd = (s.ShiftDate instanceof Date)
             ? Utilities.formatDate(s.ShiftDate, tz, 'yyyy-MM-dd')
             : String(s.ShiftDate).substring(0, 10);
-          return sd === dateStr && (s.Status === 'open' || s.Status === 'claimed');
+          return sd === dateStr && (s.Status === 'open' || s.Status === 'claimed' || s.Status === 'not_needed');
         });
 
         // Build shifts for this day
@@ -267,13 +285,17 @@ function doGet(e) {
               var visited = {};
               visited[claimed.ID] = true;
               var res = followChain(postedForDate, String(claimed.ClaimedBy), visited, tmpl.time);
-              return {
+              if (res.notNeeded) {
+                return withPost({ time: tmpl.time, location: tmpl.location, staff: res.staff,
+                                  originalStaff: 'Open', status: 'not_needed' }, res.notNeeded, tmpl.time);
+              }
+              return withPost({
                 time: tmpl.time,
                 location: tmpl.location,
                 staff: res.staff,
                 originalStaff: 'Open',
                 status: res.openPost ? 'needs_coverage' : 'covered'
-              };
+              }, res.openPost || res.lastPost || claimed, tmpl.time);
             } else {
               return {
                 time: tmpl.time,
@@ -288,7 +310,11 @@ function doGet(e) {
           // Regular staff -- follow the full coverage chain for this date
           var res = followChain(postedForDate, tmpl.staff, {}, tmpl.time);
 
-          if (res.openPost) {
+          if (res.notNeeded) {
+            var nn = { time: tmpl.time, location: tmpl.location, staff: res.staff, status: 'not_needed' };
+            if (res.staff !== tmpl.staff) nn.originalStaff = tmpl.staff;
+            return withPost(nn, res.notNeeded, tmpl.time);
+          } else if (res.openPost) {
             var out = {
               time: tmpl.time,
               location: tmpl.location,
@@ -296,15 +322,15 @@ function doGet(e) {
               status: 'needs_coverage'
             };
             if (res.staff !== tmpl.staff) out.originalStaff = tmpl.staff;
-            return out;
+            return withPost(out, res.openPost, tmpl.time);
           } else if (res.staff !== tmpl.staff) {
-            return {
+            return withPost({
               time: tmpl.time,
               location: tmpl.location,
               staff: res.staff,
               originalStaff: tmpl.staff,
               status: 'covered'
-            };
+            }, res.lastPost, tmpl.time);
           } else {
             return {
               time: tmpl.time,
@@ -512,6 +538,109 @@ function doPost(e) {
 
       notifyShiftChanged_(fromName, toName, rDate, rStart, rEnd, rLoc);
       return jsonResponse({ status: 'ok', claimedExistingPost: !!openPost });
+    }
+
+    // -- Admin: a shift is not needed this date (someone can't work and no
+    // cover is wanted). No points either way; if it had been posted, the
+    // poster's -1 is given back. Only the person on the shift is emailed.
+    if (action === 'markNotNeeded') {
+      if (String(data.pin) !== getAdminPIN()) {
+        return jsonResponse({ status: 'error', message: 'Incorrect admin PIN.' });
+      }
+      var nName = String(data.staffName || '').trim();
+      var nDate = String(data.shiftDate || '').substring(0, 10);
+      var nStart = String(data.startTime || '').trim();
+      var nEnd = String(data.endTime || '').trim();
+      var nLoc = String(data.location || '').trim();
+      var nSpan = clockSpan_(nStart, nEnd);
+      if (!nName || !nDate || !nSpan) {
+        return jsonResponse({ status: 'error', message: 'Missing shift details.' });
+      }
+      var nSheet = getSheet('Shifts');
+      var nRows = sheetToObjects(nSheet);
+      var nOpen = null;
+      for (var ni = 0; ni < nRows.length; ni++) {
+        var nr = nRows[ni];
+        if (String(nr.PostedBy) !== nName) continue;
+        if (String(nr.ShiftDate).substring(0, 10) !== nDate) continue;
+        if (nr.Status !== 'open' && nr.Status !== 'not_needed') continue;
+        var nrs = clockSpan_(nr.StartTime, nr.EndTime);
+        if (nrs && Math.min(nrs.end, nSpan.end) - Math.max(nrs.start, nSpan.start) <= 0) continue;
+        if (nr.Status === 'not_needed') {
+          return jsonResponse({ status: 'error', message: 'This shift is already marked not needed.' });
+        }
+        nOpen = nr;
+        break;
+      }
+      var nNow = new Date().toISOString();
+      if (nOpen) {
+        // It was on the Board: take it off and give the poster their point back.
+        var nRow = findRowByID(nSheet, nOpen.ID);
+        nSheet.getRange(nRow, 8).setValue('not_needed');
+        nSheet.getRange(nRow, 9).setValue('was posted');
+        nSheet.getRange(nRow, 11).setValue(nNow);
+        updateScore(nName, 1);
+      } else {
+        nSheet.appendRow([String(Date.now()), nName, nDate, nStart, nEnd, nLoc,
+                          'Not needed (admin)', 'not_needed', '', nNow, nNow]);
+      }
+      notifyNotNeeded_(nName, nDate, nStart, nEnd, nLoc);
+      return jsonResponse({ status: 'ok', wasPosted: !!nOpen });
+    }
+
+    // -- Admin: undo "not needed". A shift that had been posted goes back on
+    // the Board (and the poster's -1 comes back); otherwise the marker is
+    // simply removed and the shift is back to normal.
+    if (action === 'undoNotNeeded') {
+      if (String(data.pin) !== getAdminPIN()) {
+        return jsonResponse({ status: 'error', message: 'Incorrect admin PIN.' });
+      }
+      var uSheet = getSheet('Shifts');
+      var uRow = findRowByID(uSheet, data.id);
+      if (uRow === -1) return jsonResponse({ status: 'error', message: 'Shift not found.' });
+      if (uSheet.getRange(uRow, 8).getValue() !== 'not_needed') {
+        return jsonResponse({ status: 'error', message: 'That shift is not marked not needed.' });
+      }
+      if (String(uSheet.getRange(uRow, 9).getValue()) === 'was posted') {
+        uSheet.getRange(uRow, 8).setValue('open');
+        uSheet.getRange(uRow, 9).setValue('');
+        uSheet.getRange(uRow, 11).setValue('');
+        updateScore(String(uSheet.getRange(uRow, 2).getValue()), -1);
+        return jsonResponse({ status: 'ok', backOnBoard: true });
+      }
+      uSheet.deleteRow(uRow);
+      return jsonResponse({ status: 'ok', backOnBoard: false });
+    }
+
+    // -- Change the hours on a posted shift (open or already covered). The
+    // person who posted it can, or an admin with the PIN. If someone has
+    // already taken it, both of them are emailed the new hours.
+    if (action === 'editShiftHours') {
+      var eSheet = getSheet('Shifts');
+      var eRow = findRowByID(eSheet, data.id);
+      if (eRow === -1) return jsonResponse({ status: 'error', message: 'Shift not found.' });
+      var eStatus = eSheet.getRange(eRow, 8).getValue();
+      if (eStatus !== 'open' && eStatus !== 'claimed') {
+        return jsonResponse({ status: 'error', message: 'This shift can no longer be changed.' });
+      }
+      var ePoster = String(eSheet.getRange(eRow, 2).getValue());
+      var eBy = String(data.by || '').trim();
+      var eAdmin = data.pin !== undefined && data.pin !== '' && String(data.pin) === getAdminPIN();
+      if (!eAdmin && eBy !== ePoster) {
+        return jsonResponse({ status: 'error', message: 'Only ' + ePoster + ' or an admin can change these hours.' });
+      }
+      var eStart = String(data.startTime || '').trim(), eEnd = String(data.endTime || '').trim();
+      if (!clockSpan_(eStart, eEnd)) {
+        return jsonResponse({ status: 'error', message: 'The end time must be after the start time.' });
+      }
+      eSheet.getRange(eRow, 4).setValue(eStart);
+      eSheet.getRange(eRow, 5).setValue(eEnd);
+      if (eStatus === 'claimed') {
+        var eClaimer = String(eSheet.getRange(eRow, 9).getValue());
+        var eDate = eSheet.getRange(eRow, 3).getValue();
+        notifyHoursChanged_(ePoster, eClaimer, eDate, eStart, eEnd, String(eSheet.getRange(eRow, 6).getValue()));
+      }
+      return jsonResponse({ status: 'ok', emailed: eStatus === 'claimed' });
     }
 
     // -- Claim an open (unfilled) shift from the schedule --
@@ -811,6 +940,20 @@ function clockSpan_(startStr, endStr) {
   return { start: s, end: e };
 }
 
+// 480 -> "08:00"
+function minutesTo24h_(mins) {
+  var h = Math.floor(mins / 60), m = mins % 60;
+  return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+// 780 -> "1:00 PM"
+function minutesToLabel12_(mins) {
+  var h = Math.floor(mins / 60), m = mins % 60;
+  var ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return h + ':' + (m < 10 ? '0' : '') + m + ' ' + ampm;
+}
+
 function formatTimeForEmail(timeStr) {
   if (!timeStr) return '';
   var parts = String(timeStr).split(':');
@@ -926,6 +1069,52 @@ function notifyShiftChanged_(fromName, toName, shiftDate, startTime, endTime, lo
         body: body
       });
     }
+  } catch (e) {
+    // Don't fail the main action if email fails
+  }
+}
+
+// Tells the person on a shift that it isn't needed this date.
+function notifyNotNeeded_(name, shiftDate, startTime, endTime, location) {
+  try {
+    var to = getStaffEmails()[name];
+    if (!to) return;
+    var dateStr = formatDateForEmail(shiftDate);
+    MailApp.sendEmail({
+      to: to,
+      subject: 'Shift not needed - ' + dateStr,
+      body: 'Your shift is not needed this time, so you do not need to come in:\n\n'
+        + 'Date: ' + dateStr + '\n'
+        + 'Time: ' + formatTimeForEmail(startTime) + ' - ' + formatTimeForEmail(endTime)
+        + (location ? ' at ' + location : '') + '\n\n'
+        + 'No points are taken off.\n\n'
+        + 'https://drtennisman.github.io/shift-coverage-app/'
+    });
+  } catch (e) {
+    // Don't fail the main action if email fails
+  }
+}
+
+// Tells both people on a covered shift that its hours changed.
+function notifyHoursChanged_(poster, claimer, shiftDate, startTime, endTime, location) {
+  try {
+    var emails = getStaffEmails();
+    var recipients = [];
+    [poster, claimer].forEach(function(n) {
+      if (emails[n] && recipients.indexOf(emails[n]) === -1) recipients.push(emails[n]);
+    });
+    if (!recipients.length) return;
+    var dateStr = formatDateForEmail(shiftDate);
+    var timeStr = formatTimeForEmail(startTime) + ' - ' + formatTimeForEmail(endTime);
+    MailApp.sendEmail({
+      to: recipients.join(','),
+      subject: 'New hours - ' + claimer + ' covering ' + poster + ' on ' + dateStr,
+      body: 'The hours changed on a covered shift:\n\n'
+        + claimer + ' is covering ' + poster + '\'s shift.\n\n'
+        + 'Date: ' + dateStr + '\n'
+        + 'New time: ' + timeStr + (location ? ' at ' + location : '') + '\n\n'
+        + 'https://drtennisman.github.io/shift-coverage-app/'
+    });
   } catch (e) {
     // Don't fail the main action if email fails
   }
