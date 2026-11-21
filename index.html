@@ -434,10 +434,72 @@
       font-style: italic;
     }
     .schedule-today {
-      background: #eef4ee;
+      background: #fff;
       border-radius: 10px;
       padding: 0 12px;
+      box-shadow: 0 0 0 2px #052d54;
     }
+
+    /* Each shift is a coloured row: green = good, yellow = needs cover,
+       red = not needed. Tap a row (the arrow shows which) for its options. */
+    .schedule-shift {
+      padding: 10px 10px 10px 12px;
+      margin: 6px 0;
+      border-bottom: none;
+      border-radius: 10px;
+      border-left: 5px solid transparent;
+    }
+    .schedule-shift.st-good { background: #e8f5ea; border-left-color: #2e7d32; }
+    .schedule-shift.st-need { background: #fff4cc; border-left-color: #e0a100; }
+    .schedule-shift.st-off  { background: #fde8e8; border-left-color: #c62828; }
+    .schedule-shift.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .schedule-shift.tappable:active { filter: brightness(0.96); }
+    .schedule-shift-right { display: flex; align-items: center; gap: 6px; text-align: right; }
+    .shift-chev { font-size: 22px; line-height: 1; color: #052d54; opacity: 0.4; }
+    .schedule-shift-staff.needs-coverage { color: #7a5600; }
+    .schedule-shift-staff.covered { color: #1e6b30; }
+    .schedule-shift-staff.open-shift { color: #7a5600; }
+    .schedule-shift-staff.not-needed { color: #9b2c2c; }
+    .schedule-badge.open { background: #ffe08a; color: #5c4100; }
+    .schedule-badge.available { background: #ffe08a; color: #5c4100; }
+    .schedule-badge.swap { background: #c8e6cd; color: #14532d; }
+    .schedule-badge.not-needed { background: #f8caca; color: #7f1d1d; }
+    .schedule-posted-time { color: #7a5600; }
+    .schedule-tap-hint { font-size: 11px; color: #7a5600; font-weight: 600; }
+
+    /* Options panel that slides up from the bottom */
+    .sheet-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 290;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .sheet-overlay.show { display: flex; }
+    .sheet {
+      background: #fff;
+      width: 100%;
+      max-width: 480px;
+      border-radius: 18px 18px 0 0;
+      padding: 18px 16px calc(16px + env(safe-area-inset-bottom));
+      animation: sheetUp 0.18s ease-out;
+    }
+    @keyframes sheetUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+    .sheet-title { font-size: 17px; font-weight: 700; color: #052d54; text-align: center; }
+    .sheet-sub { font-size: 13px; color: #666; text-align: center; margin: 4px 0 12px; line-height: 1.4; }
+    .sheet-btn {
+      display: block; width: 100%;
+      padding: 14px; margin-top: 8px;
+      border: none; border-radius: 12px;
+      font-size: 16px; font-weight: 600;
+      background: #eef2f7; color: #052d54;
+      cursor: pointer;
+    }
+    .sheet-btn:active { opacity: 0.8; }
+    .sheet-btn.primary { background: #052d54; color: #fff; }
+    .sheet-btn.danger { background: #fde8e8; color: #b71c1c; }
+    .sheet-btn.cancel { background: transparent; color: #666; margin-top: 10px; }
 
     /* ─── Empty State ──────────────────────────────── */
     .empty-state {
@@ -819,6 +881,16 @@
   <div class="toast" id="toast"></div>
 
   <!-- ─── Confirmation Modal ──────────────────────── -->
+  <!-- Options for one shift (tap a row on the schedule) -->
+  <div class="sheet-overlay" id="shiftSheet" onclick="if (event.target === this) closeSheet()">
+    <div class="sheet">
+      <div class="sheet-title" id="sheetTitle"></div>
+      <div class="sheet-sub" id="sheetSub"></div>
+      <div id="sheetActions"></div>
+      <button class="sheet-btn cancel" onclick="closeSheet()">Cancel</button>
+    </div>
+  </div>
+
   <!-- Change the hours on a posted shift -->
   <div class="modal-overlay" id="hoursModal">
     <div class="modal-box">
@@ -1112,11 +1184,10 @@ async function renderSchedule() {
 
           if (shift.status === 'open_shift') {
             staffClass += ' open-shift';
-            staffHtml = '<span class="schedule-badge available">Available</span>';
-            staffHtml += '<br><button class="btn-claim-open" onclick="claimOpenShift(\'' + day.date + '\', \'' + escapeHtml(shift.time) + '\', \'' + escapeHtml(shift.location) + '\')">Claim +1</button>';
+            staffHtml = '<span class="schedule-badge available">Available</span><br><span class="schedule-tap-hint">Tap to claim +1</span>';
           } else if (shift.status === 'needs_coverage') {
             staffClass += ' needs-coverage';
-            staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge open">Needs Cover</span>';
+            staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge open">Needs cover</span>';
             if (shift.originalStaff) {
               staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
             }
@@ -1131,34 +1202,44 @@ async function renderSchedule() {
             staffHtml = escapeHtml(shift.staff);
           }
 
-          // One tap to ask for coverage: on your own shift, or on anyone's if
-          // you're an admin. Not on shifts already up for grabs.
-          const cover = canAskCover(shift), change = canChangePerson(shift),
-                notNeeded = canMarkNotNeeded(shift), hours = canEditHours(shift),
-                undo = isAdminUser === true && shift.status === 'not_needed' && shift.postId;
-          if (cover || change || notNeeded || hours || undo) {
+          // What this person can do with this shift. Tapping the row opens
+          // these as big buttons in a panel; a row with none isn't tappable.
+          const actions = [];
+          if (shift.status === 'open_shift') actions.push('claim');
+          if (shift.status === 'needs_coverage' && shift.postId && shift.postedBy && shift.postedBy !== currentUser) actions.push('take');
+          if (canAskCover(shift)) actions.push('cover');
+          if (canEditHours(shift)) actions.push('hours');
+          if (canChangePerson(shift)) actions.push('change');
+          if (canMarkNotNeeded(shift)) actions.push('notNeeded');
+          if (isAdminUser === true && shift.status === 'not_needed' && shift.postId) actions.push('undo');
+          if (shift.status === 'needs_coverage' && shift.postId && shift.postedBy === currentUser) actions.push('cancelPost');
+
+          const tone = shift.status === 'not_needed' ? 'st-off'
+                     : (shift.status === 'needs_coverage' || shift.status === 'open_shift') ? 'st-need'
+                     : 'st-good';
+          let tap = '', chev = '';
+          if (actions.length) {
             const idx = scheduleShifts.push({ date: day.date, day: day.day, time: shift.time,
                                               location: shift.location, staff: shift.staff,
                                               postId: shift.postId || '', postedBy: shift.postedBy || '',
                                               postStart: shift.postStart || '', postEnd: shift.postEnd || '',
-                                              status: shift.status }) - 1;
-            staffHtml += '<div class="shift-btns">';
-            if (cover) staffHtml += '<button class="btn-cover" onclick="askCover(' + idx + ')">Get covered</button>';
-            if (hours) staffHtml += '<button class="btn-cover" onclick="openHours(' + idx + ')">Edit hours</button>';
-            if (change) staffHtml += '<button class="btn-cover" onclick="openReassign(' + idx + ')">Change person</button>';
-            if (notNeeded) staffHtml += '<button class="btn-cover" onclick="askNotNeeded(' + idx + ')">Not needed</button>';
-            if (undo) staffHtml += '<button class="btn-cover" onclick="askUndoNotNeeded(' + idx + ')">Undo</button>';
-            staffHtml += '</div>';
+                                              status: shift.status, originalStaff: shift.originalStaff || '',
+                                              actions: actions }) - 1;
+            tap = ' tappable" onclick="openShiftSheet(' + idx + ')" role="button" tabindex="0';
+            chev = '<span class="shift-chev" aria-hidden="true">&rsaquo;</span>';
           }
 
           inner += `
-            <div class="schedule-shift">
+            <div class="schedule-shift ${tone}${tap}">
               <div class="schedule-shift-info">
                 <div class="schedule-shift-time">${escapeHtml(shift.time)}</div>
                 <div class="schedule-shift-location">${escapeHtml(shift.location)}</div>
                 ${shift.postedTime && shift.status !== 'not_needed' ? '<div class="schedule-posted-time">' + (shift.status === 'covered' ? 'Covering ' : 'Cover needed ') + escapeHtml(shift.postedTime) + '</div>' : ''}
               </div>
-              <div class="${staffClass}">${staffHtml}</div>
+              <div class="schedule-shift-right">
+                <div class="${staffClass}">${staffHtml}</div>
+                ${chev}
+              </div>
             </div>`;
         });
       }
@@ -1170,6 +1251,49 @@ async function renderSchedule() {
   } catch (err) {
     container.innerHTML = '<div class="empty-state"><p>Could not load schedule. Pull to refresh.</p></div>';
   }
+}
+
+// --- Options panel for one shift ----------------------------------------
+const SHEET_ACTIONS = {
+  claim:     { label: 'Claim this shift (+1)', cls: 'primary', run: sh => claimOpenShift(sh.date, sh.time, sh.location) },
+  take:      { label: 'Cover this shift (+1)', cls: 'primary', run: sh => claimShift(sh.postId, sh.postedBy) },
+  cancelPost:{ label: 'Cancel my request',     cls: '',        run: sh => cancelShift(sh.postId) },
+  cover:     { label: 'Get covered',           cls: 'primary', run: (sh, idx) => askCover(idx) },
+  hours:     { label: 'Edit hours',            cls: '',        run: (sh, idx) => openHours(idx) },
+  change:    { label: 'Change person',         cls: '',        run: (sh, idx) => openReassign(idx) },
+  notNeeded: { label: 'Mark not needed',       cls: 'danger',  run: (sh, idx) => askNotNeeded(idx) },
+  undo:      { label: 'Undo "not needed"',     cls: 'primary', run: (sh, idx) => askUndoNotNeeded(idx) }
+};
+
+function openShiftSheet(idx) {
+  const sh = scheduleShifts[idx];
+  if (!sh) return;
+  document.getElementById('sheetTitle').textContent = formatDate(sh.date) + ' · ' + sh.time;
+  const who = sh.status === 'open_shift' ? 'Open shift'
+            : sh.status === 'covered' ? sh.staff + ' covering ' + sh.originalStaff
+            : sh.status === 'needs_coverage' ? sh.staff + ' · needs cover'
+            : sh.status === 'not_needed' ? sh.staff + ' · not needed'
+            : sh.staff;
+  document.getElementById('sheetSub').textContent = (sh.location ? sh.location + ' · ' : '') + who;
+  const box = document.getElementById('sheetActions');
+  box.innerHTML = '';
+  // Only the first action is the big dark button; the rest stay light.
+  let primaryUsed = false;
+  sh.actions.forEach(key => {
+    const a = SHEET_ACTIONS[key];
+    const b = document.createElement('button');
+    let cls = a.cls;
+    if (cls === 'primary') { if (primaryUsed) cls = ''; primaryUsed = true; }
+    b.className = 'sheet-btn ' + cls;
+    b.textContent = a.label;
+    b.onclick = () => { closeSheet(); a.run(sh, idx); };
+    box.appendChild(b);
+  });
+  document.getElementById('shiftSheet').classList.add('show');
+}
+
+function closeSheet() {
+  document.getElementById('shiftSheet').classList.remove('show');
 }
 
 // --- One-tap "Get covered" from the schedule --------------------------
@@ -1712,6 +1836,7 @@ async function claimShift(id, postedBy) {
       }
       loadBoard();
       updateBoardBadge();
+      if (document.getElementById('homeScreen').classList.contains('active')) renderSchedule();
     }
   );
 }
@@ -1729,6 +1854,7 @@ async function cancelShift(id) {
       }
       loadBoard();
       updateBoardBadge();
+      if (document.getElementById('homeScreen').classList.contains('active')) renderSchedule();
     }
   );
 }
