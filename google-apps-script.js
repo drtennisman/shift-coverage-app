@@ -510,8 +510,7 @@ function doPost(e) {
       }
       getSheet('History').appendRow([recordId, fromName, toName, rDate, nowIso]);
 
-      notifyPoster_ShiftClaimed(fromName, toName, rDate, rStart, rEnd);
-      notifyReassigned_(toName, fromName, rDate, rStart, rEnd, rLoc);
+      notifyShiftChanged_(fromName, toName, rDate, rStart, rEnd, rLoc);
       return jsonResponse({ status: 'ok', claimedExistingPost: !!openPost });
     }
 
@@ -903,22 +902,30 @@ function notifyPoster_ShiftClaimed(postedBy, claimedBy, shiftDate, startTime, en
   }
 }
 
-// Tells the person an admin put on a shift that it's theirs now.
-function notifyReassigned_(toName, fromName, shiftDate, startTime, endTime, location) {
+// When an admin changes who works a shift, the two people it affects -- the
+// person taken off and the person put on -- get one email between them.
+function notifyShiftChanged_(fromName, toName, shiftDate, startTime, endTime, location) {
   try {
-    var to = getStaffEmails()[toName];
-    if (!to) return;
+    var emails = getStaffEmails();
     var dateStr = formatDateForEmail(shiftDate);
     var timeStr = formatTimeForEmail(startTime) + ' - ' + formatTimeForEmail(endTime);
-    MailApp.sendEmail({
-      to: to,
-      subject: 'You\'re on the schedule - ' + dateStr,
-      body: 'You have been put on ' + fromName + '\'s shift:\n\n'
-        + 'Date: ' + dateStr + '\n'
-        + 'Time: ' + timeStr + (location ? ' at ' + location : '') + '\n\n'
-        + 'It shows on the schedule in the Shift Coverage app:\n'
-        + 'https://drtennisman.github.io/shift-coverage-app/'
+    var body = 'Schedule change:\n\n'
+      + toName + ' is working ' + fromName + '\'s shift.\n\n'
+      + 'Date: ' + dateStr + '\n'
+      + 'Time: ' + timeStr + (location ? ' at ' + location : '') + '\n\n'
+      + 'See the schedule in the Shift Coverage app:\n'
+      + 'https://drtennisman.github.io/shift-coverage-app/';
+    var recipients = [];
+    [fromName, toName].forEach(function(n) {
+      if (emails[n] && recipients.indexOf(emails[n]) === -1) recipients.push(emails[n]);
     });
+    if (recipients.length > 0) {
+      MailApp.sendEmail({
+        to: recipients.join(','),
+        subject: 'Schedule change - ' + toName + ' working ' + fromName + '\'s shift on ' + dateStr,
+        body: body
+      });
+    }
   } catch (e) {
     // Don't fail the main action if email fails
   }

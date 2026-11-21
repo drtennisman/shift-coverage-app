@@ -1219,7 +1219,7 @@ function updateReassignNote() {
   const to = document.getElementById('reassignTo').value;
   const sh = reassignShift;
   document.getElementById('reassignNote').textContent = (sh && to)
-    ? 'Counts like a normal cover: ' + sh.staff + ' -1, ' + to + ' +1. Both get an email. Just this date; the regular schedule doesn\'t change.'
+    ? 'Counts like a normal cover: ' + sh.staff + ' -1, ' + to + ' +1. Both of them get an email. Just this date; the regular schedule doesn\'t change.'
     : 'Just this date; the regular schedule doesn\'t change.';
 }
 
