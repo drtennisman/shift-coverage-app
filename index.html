@@ -336,7 +336,9 @@
       color: #1a1a1a;
       white-space: nowrap;
     }
-    .schedule-shift-info { flex-shrink: 0; margin-right: 8px; }
+    .schedule-shift-info { flex: 1 1 auto; min-width: 0; margin-right: 8px; }
+    .schedule-shift-right { flex-shrink: 0; }
+    .schedule-shift-staff .schedule-badge { margin-left: 0; margin-top: 3px; }
     .schedule-shift-location {
       font-size: 12px;
       color: #777;
@@ -1189,17 +1191,17 @@ async function renderSchedule() {
             staffHtml = '<span class="schedule-badge available">Available</span><br><span class="schedule-tap-hint">Tap to claim +1</span>';
           } else if (shift.status === 'needs_coverage') {
             staffClass += ' needs-coverage';
-            staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge open">Needs cover</span>';
+            staffHtml = escapeHtml(shift.staff) + '<br><span class="schedule-badge open">Needs cover</span>';
             if (shift.originalStaff) {
               staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
             }
           } else if (shift.status === 'covered') {
             staffClass += ' covered';
-            staffHtml = escapeHtml(shift.staff) + ' <span class="schedule-badge swap">Covering</span>';
+            staffHtml = escapeHtml(shift.staff) + '<br><span class="schedule-badge swap">Covering</span>';
             staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
           } else if (shift.status === 'not_needed') {
             staffClass += ' not-needed';
-            staffHtml = '<s>' + escapeHtml(shift.staff) + '</s> <span class="schedule-badge not-needed">Not needed</span>';
+            staffHtml = '<s>' + escapeHtml(shift.staff) + '</s><br><span class="schedule-badge not-needed">Not needed</span>';
           } else {
             staffHtml = escapeHtml(shift.staff);
           }
