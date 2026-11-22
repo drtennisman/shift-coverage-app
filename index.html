@@ -440,8 +440,8 @@
       box-shadow: 0 0 0 2px #052d54;
     }
 
-    /* Each shift is a coloured row: green = good, yellow = needs cover,
-       red = not needed. Tap a row (the arrow shows which) for its options. */
+    /* Each shift is a coloured row: green = normal (or covered), red = needs
+       cover, grey = not needed. Tap a row (the arrow shows which) for options. */
     .schedule-shift {
       padding: 10px 10px 10px 12px;
       margin: 6px 0;
@@ -450,22 +450,24 @@
       border-left: 5px solid transparent;
     }
     .schedule-shift.st-good { background: #e8f5ea; border-left-color: #2e7d32; }
-    .schedule-shift.st-need { background: #fff4cc; border-left-color: #e0a100; }
-    .schedule-shift.st-off  { background: #fde8e8; border-left-color: #c62828; }
+    .schedule-shift.st-need { background: #fde8e8; border-left-color: #c62828; }
+    .schedule-shift.st-off  { background: #eceff1; border-left-color: #9e9e9e; }
+    .schedule-shift.st-off .schedule-shift-time,
+    .schedule-shift.st-off .schedule-shift-location { color: #9e9e9e; }
     .schedule-shift.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .schedule-shift.tappable:active { filter: brightness(0.96); }
     .schedule-shift-right { display: flex; align-items: center; gap: 6px; text-align: right; }
     .shift-chev { font-size: 22px; line-height: 1; color: #052d54; opacity: 0.4; }
-    .schedule-shift-staff.needs-coverage { color: #7a5600; }
+    .schedule-shift-staff.needs-coverage { color: #b71c1c; }
     .schedule-shift-staff.covered { color: #1e6b30; }
-    .schedule-shift-staff.open-shift { color: #7a5600; }
-    .schedule-shift-staff.not-needed { color: #9b2c2c; }
-    .schedule-badge.open { background: #ffe08a; color: #5c4100; }
-    .schedule-badge.available { background: #ffe08a; color: #5c4100; }
+    .schedule-shift-staff.open-shift { color: #b71c1c; }
+    .schedule-shift-staff.not-needed { color: #9e9e9e; }
+    .schedule-badge.open { background: #f8caca; color: #7f1d1d; }
+    .schedule-badge.available { background: #f8caca; color: #7f1d1d; }
     .schedule-badge.swap { background: #c8e6cd; color: #14532d; }
-    .schedule-badge.not-needed { background: #f8caca; color: #7f1d1d; }
-    .schedule-posted-time { color: #7a5600; }
-    .schedule-tap-hint { font-size: 11px; color: #7a5600; font-weight: 600; }
+    .schedule-badge.not-needed { background: #cfd8dc; color: #455a64; }
+    .schedule-posted-time { color: #b71c1c; }
+    .schedule-tap-hint { font-size: 11px; color: #b71c1c; font-weight: 600; }
 
     /* Options panel that slides up from the bottom */
     .sheet-overlay {
