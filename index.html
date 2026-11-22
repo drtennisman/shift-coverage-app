@@ -336,9 +336,12 @@
       color: #1a1a1a;
       white-space: nowrap;
     }
-    .schedule-shift-info { flex: 1 1 auto; min-width: 0; margin-right: 8px; }
-    .schedule-shift-right { flex-shrink: 0; }
-    .schedule-shift-staff .schedule-badge { margin-left: 0; margin-top: 3px; }
+    .schedule-shift-info { flex: 0 0 auto; width: min-content; margin-right: 8px; }
+    .schedule-shift-right { flex: 1 1 auto; min-width: 0; justify-content: flex-end; }
+    .schedule-name { white-space: nowrap; }
+    .schedule-shift .schedule-shift-time { font-size: 12.5px; }
+    .schedule-shift .schedule-shift-staff { font-size: 12.5px; }
+    .schedule-shift-staff .schedule-badge { margin: 0 5px 0 0; vertical-align: 1px; padding: 1px 5px; letter-spacing: 0.1px; }
     .schedule-shift-location {
       font-size: 12px;
       color: #777;
@@ -445,7 +448,7 @@
     /* Each shift is a coloured row: green = normal (or covered), red = needs
        cover, grey = not needed. Tap a row (the arrow shows which) for options. */
     .schedule-shift {
-      padding: 10px 10px 10px 12px;
+      padding: 10px 8px 10px 10px;
       margin: 6px 0;
       border-bottom: none;
       border-radius: 10px;
@@ -458,8 +461,8 @@
     .schedule-shift.st-off .schedule-shift-location { color: #9e9e9e; }
     .schedule-shift.tappable { cursor: pointer; -webkit-tap-highlight-color: transparent; }
     .schedule-shift.tappable:active { filter: brightness(0.96); }
-    .schedule-shift-right { display: flex; align-items: center; gap: 6px; text-align: right; }
-    .shift-chev { font-size: 22px; line-height: 1; color: #052d54; opacity: 0.4; }
+    .schedule-shift-right { display: flex; align-items: center; gap: 3px; text-align: right; }
+    .shift-chev { font-size: 20px; line-height: 1; color: #052d54; opacity: 0.4; margin-right: -3px; }
     .schedule-shift-staff.needs-coverage { color: #b71c1c; }
     .schedule-shift-staff.covered { color: #1e6b30; }
     .schedule-shift-staff.open-shift { color: #b71c1c; }
@@ -1184,6 +1187,7 @@ async function renderSchedule() {
       } else {
         day.shifts.forEach(shift => {
           let staffHtml = '';
+          let tagHtml = '';
           let staffClass = 'schedule-shift-staff';
 
           if (shift.status === 'open_shift') {
@@ -1191,17 +1195,17 @@ async function renderSchedule() {
             staffHtml = '<span class="schedule-badge available">Available</span><br><span class="schedule-tap-hint">Tap to claim +1</span>';
           } else if (shift.status === 'needs_coverage') {
             staffClass += ' needs-coverage';
-            staffHtml = escapeHtml(shift.staff) + '<br><span class="schedule-badge open">Needs cover</span>';
+            staffHtml = '<span class="schedule-badge open">Needs cover</span><span class="schedule-name">' + escapeHtml(shift.staff) + '</span>';
             if (shift.originalStaff) {
               staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
             }
           } else if (shift.status === 'covered') {
             staffClass += ' covered';
-            staffHtml = escapeHtml(shift.staff) + '<br><span class="schedule-badge swap">Covering</span>';
+            staffHtml = '<span class="schedule-badge swap">Covering</span><span class="schedule-name">' + escapeHtml(shift.staff) + '</span>';
             staffHtml += '<br><span class="schedule-original">' + escapeHtml(shift.originalStaff) + '</span>';
           } else if (shift.status === 'not_needed') {
             staffClass += ' not-needed';
-            staffHtml = '<s>' + escapeHtml(shift.staff) + '</s><br><span class="schedule-badge not-needed">Not needed</span>';
+            staffHtml = '<span class="schedule-badge not-needed">Not needed</span><s class="schedule-name">' + escapeHtml(shift.staff) + '</s>';
           } else {
             staffHtml = escapeHtml(shift.staff);
           }
@@ -1238,6 +1242,7 @@ async function renderSchedule() {
               <div class="schedule-shift-info">
                 <div class="schedule-shift-time">${escapeHtml(shift.time)}</div>
                 <div class="schedule-shift-location">${escapeHtml(shift.location)}</div>
+                ${tagHtml ? '<div class="schedule-tag">' + tagHtml + '</div>' : ''}
                 ${shift.postedTime && shift.status !== 'not_needed' ? '<div class="schedule-posted-time">' + (shift.status === 'covered' ? 'Covering ' : 'Cover needed ') + escapeHtml(shift.postedTime) + '</div>' : ''}
               </div>
               <div class="schedule-shift-right">
